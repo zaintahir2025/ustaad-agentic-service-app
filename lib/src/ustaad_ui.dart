@@ -3,9 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import 'app_theme.dart';
 import 'models.dart';
 import 'ustaad_state.dart';
+
+const Color _authBackground = Color(0xFF101010);
+const Color _authPanel = Color(0xFF1D1D1D);
+const Color _authFieldFill = Color(0xFF111111);
+const Color _authBorder = Color(0xFF303030);
+const Color _authAccent = Color(0xFFBEFF3D);
+const Color _authAccentWarm = Color(0xFFFF8B2E);
+const Color _authMuted = Color(0xFF8D8F94);
+const Color _authText = Color(0xFFF7F7F7);
+const Color _authError = Color(0xFFFF8A80);
 
 class UstaadRouter extends StatelessWidget {
   const UstaadRouter({super.key});
@@ -103,43 +112,69 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _Stage(
-      wideMaxWidth: 1040,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 820;
-          final form = _Panel(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 160),
-              child: _creatingAccount ? _joinForm() : _loginForm(),
-            ),
-          );
+    return Scaffold(
+      backgroundColor: _authBackground,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontal = constraints.maxWidth < 420 ? 18.0 : 28.0;
+            final vertical = constraints.maxHeight < 720 ? 18.0 : 28.0;
 
-          if (!wide) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Align(
-                  alignment: Alignment.centerRight,
-                  child: _ThemeButton(),
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontal,
+                vertical: vertical,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - (vertical * 2),
                 ),
-                const SizedBox(height: 12),
-                const _BrandHeader(),
-                const SizedBox(height: 24),
-                form,
-              ],
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _AuthBrandHeader(),
+                        const SizedBox(height: 20),
+                        _AuthPanel(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _AuthTabs(
+                                creatingAccount: _creatingAccount,
+                                onLogin: () => setState(
+                                  () => _creatingAccount = false,
+                                ),
+                                onJoin: () => setState(
+                                  () => _creatingAccount = true,
+                                ),
+                              ),
+                              const SizedBox(height: 22),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                alignment: Alignment.topCenter,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 160),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  child: _creatingAccount
+                                      ? _joinForm()
+                                      : _loginForm(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Expanded(child: _HeroPanel()),
-              const SizedBox(width: 20),
-              Expanded(child: form),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -150,50 +185,51 @@ class _GatewayScreenState extends State<GatewayScreen> {
       key: const ValueKey('login'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Sign in',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-        ),
-        const SizedBox(height: 18),
-        TextField(
+        _AuthTextField(
           controller: _loginEmail,
+          label: 'Enter Email Address',
           keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Email'),
+          autofillHints: const [AutofillHints.email],
         ),
-        const SizedBox(height: 12),
-        _PasswordField(
+        const SizedBox(height: 26),
+        _AuthPasswordField(
           controller: _loginPassword,
           obscure: _obscure,
           onToggle: () => setState(() => _obscure = !_obscure),
         ),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Remember email'),
-          value: _remember,
-          onChanged: (value) => setState(() => _remember = value),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: busy ? null : _showResetDialog,
+            style: TextButton.styleFrom(
+              foregroundColor: _authAccent,
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+            child: const Text('Forgot Password?'),
+          ),
         ),
-        const SizedBox(height: 8),
-        ElevatedButton(
+        const SizedBox(height: 18),
+        _AuthButton(
           onPressed: busy ? null : _submitLogin,
           child: busy
               ? const SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _authFieldFill,
+                  ),
                 )
-              : const Text('CONTINUE'),
+              : const Text('LOGIN'),
         ),
-        const SizedBox(height: 8),
-        TextButton(
-          onPressed: busy ? null : _showResetDialog,
-          child: const Text('Forgot password?'),
-        ),
-        TextButton(
-          onPressed:
-              busy ? null : () => setState(() => _creatingAccount = true),
-          child: const Text('Create a new account'),
+        const SizedBox(height: 14),
+        _AuthRememberRow(
+          value: _remember,
+          onChanged: (value) => setState(() => _remember = value),
         ),
       ],
     );
@@ -205,55 +241,51 @@ class _GatewayScreenState extends State<GatewayScreen> {
       key: const ValueKey('join'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Create account',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-        ),
-        const SizedBox(height: 18),
-        TextField(
+        _AuthTextField(
           controller: _joinName,
+          label: 'Enter Full Name',
           textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Full name'),
+          autofillHints: const [AutofillHints.name],
         ),
-        const SizedBox(height: 12),
-        TextField(
+        const SizedBox(height: 22),
+        _AuthTextField(
           controller: _joinEmail,
+          label: 'Enter Email Address',
           keyboardType: TextInputType.emailAddress,
-          decoration:
-              InputDecoration(labelText: 'Email', errorText: _emailError),
+          errorText: _emailError,
+          autofillHints: const [AutofillHints.email],
         ),
-        const SizedBox(height: 12),
-        TextField(
+        const SizedBox(height: 22),
+        _AuthTextField(
           controller: _joinPhone,
+          label: 'Enter Phone Number',
           keyboardType: TextInputType.phone,
-          decoration: InputDecoration(
-            labelText: 'Phone (+92...)',
-            errorText: _phoneError,
-          ),
+          errorText: _phoneError,
+          autofillHints: const [AutofillHints.telephoneNumber],
         ),
-        const SizedBox(height: 12),
-        _PasswordField(
+        const SizedBox(height: 22),
+        _AuthPasswordField(
           controller: _joinPassword,
           obscure: _obscure,
           onToggle: () => setState(() => _obscure = !_obscure),
         ),
         const SizedBox(height: 18),
-        ElevatedButton(
+        _AuthButton(
           onPressed: busy ? null : _submitJoin,
           child: busy
               ? const SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _authFieldFill,
+                  ),
                 )
-              : const Text('CREATE ACCOUNT'),
+              : const Text('JOIN US'),
         ),
-        const SizedBox(height: 8),
-        TextButton(
-          onPressed:
-              busy ? null : () => setState(() => _creatingAccount = false),
-          child: const Text('Back to sign in'),
+        const SizedBox(height: 14),
+        _AuthRememberRow(
+          value: _remember,
+          onChanged: (value) => setState(() => _remember = value),
         ),
       ],
     );
@@ -359,6 +391,490 @@ class _GatewayScreenState extends State<GatewayScreen> {
     if (!mounted) return;
     _show(state.bannerMessage ??
         (ok ? 'Password reset email sent.' : 'Password reset failed.'));
+  }
+}
+
+class _AuthBrandHeader extends StatelessWidget {
+  const _AuthBrandHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const _UrduUstaadMark(),
+        const SizedBox(height: 6),
+        const Text(
+          'USTAAD',
+          style: TextStyle(
+            color: _authText,
+            fontSize: 30,
+            height: 1,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'USTAAD Hazir hai 24/7',
+          style: TextStyle(
+            color: _authMuted.withValues(alpha: 0.82),
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _UrduUstaadMark extends StatelessWidget {
+  const _UrduUstaadMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 178,
+      height: 72,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          const Positioned(
+            left: 26,
+            top: 2,
+            right: 28,
+            child: Text(
+              'استاد',
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: TextStyle(
+                color: _authAccent,
+                fontSize: 54,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+                shadows: [
+                  Shadow(color: _authAccent, blurRadius: 8),
+                  Shadow(color: Colors.white70, blurRadius: 1),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 6,
+            top: 28,
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.white70, width: 5),
+                  top: BorderSide(color: Colors.white70, width: 5),
+                ),
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(22),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 10,
+            top: 18,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: const BoxDecoration(
+                color: Colors.white70,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            right: 18,
+            top: 7,
+            child: Column(
+              children: [
+                Container(width: 3, height: 30, color: Colors.white70),
+                const SizedBox(height: 3),
+                Container(width: 14, height: 14, color: _authAccentWarm),
+                const SizedBox(height: 2),
+                Container(width: 10, height: 14, color: _authAccentWarm),
+              ],
+            ),
+          ),
+          Positioned(
+            right: 128,
+            top: 40,
+            child: Row(
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: _authAccentWarm,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: _authAccentWarm,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuthPanel extends StatelessWidget {
+  const _AuthPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.94, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, animatedChild) {
+        return Opacity(
+          opacity: value.clamp(0, 1),
+          child: Transform.scale(scale: value, child: animatedChild),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          MediaQuery.sizeOf(context).width < 380 ? 20 : 22,
+          26,
+          MediaQuery.sizeOf(context).width < 380 ? 20 : 22,
+          18,
+        ),
+        decoration: BoxDecoration(
+          color: _authPanel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _authAccent.withValues(alpha: 0.24),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.42),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _AuthTabs extends StatelessWidget {
+  const _AuthTabs({
+    required this.creatingAccount,
+    required this.onLogin,
+    required this.onJoin,
+  });
+
+  final bool creatingAccount;
+  final VoidCallback onLogin;
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _AuthTabButton(
+                label: 'LOGIN',
+                selected: !creatingAccount,
+                onTap: onLogin,
+              ),
+            ),
+            Expanded(
+              child: _AuthTabButton(
+                label: 'JOIN US',
+                selected: creatingAccount,
+                onTap: onJoin,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Stack(
+          children: [
+            Container(height: 1, color: _authBorder),
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              alignment: creatingAccount
+                  ? Alignment.centerRight
+                  : Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: 0.5,
+                child: Container(height: 2, color: _authAccent),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthTabButton extends StatelessWidget {
+  const _AuthTabButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 160),
+          style: TextStyle(
+            color: selected ? _authAccent : _authMuted,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+          child: Text(label, textAlign: TextAlign.center),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthTextField extends StatelessWidget {
+  const _AuthTextField({
+    required this.controller,
+    required this.label,
+    this.keyboardType,
+    this.textCapitalization = TextCapitalization.none,
+    this.errorText,
+    this.autofillHints,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final TextInputType? keyboardType;
+  final TextCapitalization textCapitalization;
+  final String? errorText;
+  final Iterable<String>? autofillHints;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _AuthFieldLabel(label),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textCapitalization: textCapitalization,
+          autofillHints: autofillHints,
+          cursorColor: _authAccent,
+          style: const TextStyle(
+            color: _authText,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+          decoration: _authInputDecoration(errorText: errorText),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthPasswordField extends StatelessWidget {
+  const _AuthPasswordField({
+    required this.controller,
+    required this.obscure,
+    required this.onToggle,
+  });
+
+  final TextEditingController controller;
+  final bool obscure;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _AuthFieldLabel('Enter Password'),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          autofillHints: const [AutofillHints.password],
+          cursorColor: _authAccent,
+          style: const TextStyle(
+            color: _authText,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+          decoration: _authInputDecoration(
+            suffixIcon: IconButton(
+              tooltip: obscure ? 'Show password' : 'Hide password',
+              onPressed: onToggle,
+              icon: Icon(
+                obscure ? Icons.visibility : Icons.visibility_off,
+                color: _authMuted,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthFieldLabel extends StatelessWidget {
+  const _AuthFieldLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: _authText,
+        fontSize: 14,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 0,
+      ),
+    );
+  }
+}
+
+InputDecoration _authInputDecoration({
+  String? errorText,
+  Widget? suffixIcon,
+}) {
+  final border = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(7),
+    borderSide: const BorderSide(color: _authBorder),
+  );
+
+  return InputDecoration(
+    filled: true,
+    fillColor: _authFieldFill,
+    errorText: errorText,
+    errorStyle: const TextStyle(color: _authError, fontWeight: FontWeight.w700),
+    suffixIcon: suffixIcon,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+    border: border,
+    enabledBorder: border,
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: _authAccent, width: 1.2),
+    ),
+    errorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: _authError),
+    ),
+    focusedErrorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: _authError, width: 1.2),
+    ),
+  );
+}
+
+class _AuthButton extends StatelessWidget {
+  const _AuthButton({
+    required this.onPressed,
+    required this.child,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: _authAccent,
+          foregroundColor: _authFieldFill,
+          disabledBackgroundColor: _authAccent.withValues(alpha: 0.55),
+          disabledForegroundColor: _authFieldFill.withValues(alpha: 0.7),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _AuthRememberRow extends StatelessWidget {
+  const _AuthRememberRow({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Keep me logged in',
+            style: TextStyle(
+              color: _authMuted.withValues(alpha: 0.82),
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: Colors.white,
+          activeTrackColor: _authAccent.withValues(alpha: 0.92),
+          inactiveThumbColor: Colors.white,
+          inactiveTrackColor: _authBorder,
+          trackOutlineColor: WidgetStateProperty.resolveWith(
+            (_) => Colors.transparent,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1153,133 +1669,6 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-class _BrandHeader extends StatelessWidget {
-  const _BrandHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const _UstaadLogoMark(size: 68),
-        const SizedBox(height: 12),
-        Text(
-          'USTAAD',
-          style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Smart home services',
-          style:
-              TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
-      ],
-    );
-  }
-}
-
-class _UstaadLogoMark extends StatelessWidget {
-  const _UstaadLogoMark({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: ustaadPrimary,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
-      ),
-      child: Stack(
-        children: [
-          Center(
-            child: Text(
-              'U',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: size * 0.54,
-                fontWeight: FontWeight.w900,
-                height: 1,
-              ),
-            ),
-          ),
-          Positioned(
-            right: size * 0.18,
-            top: size * 0.18,
-            child: Container(
-              width: size * 0.16,
-              height: size * 0.16,
-              decoration: const BoxDecoration(
-                color: ustaadSecondary,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Positioned(
-            left: size * 0.22,
-            right: size * 0.22,
-            bottom: size * 0.20,
-            child: Container(
-              height: size * 0.08,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroPanel extends StatelessWidget {
-  const _HeroPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              _UstaadLogoMark(size: 54),
-              Spacer(),
-              _ThemeButton(),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'USTAAD',
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                ),
-          ),
-          const SizedBox(height: 18),
-          const Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MiniPill(icon: Icons.translate, label: 'Urdu'),
-              _MiniPill(icon: Icons.verified, label: 'Trusted'),
-              _MiniPill(icon: Icons.flash_on, label: 'Fast'),
-              _MiniPill(icon: Icons.cloud_done, label: 'Live'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _FeatureStrip extends StatelessWidget {
   const _FeatureStrip({required this.online});
 
@@ -1304,38 +1693,6 @@ class _FeatureStrip extends StatelessWidget {
           visualDensity: VisualDensity.compact,
         );
       }).toList(),
-    );
-  }
-}
-
-class _MiniPill extends StatelessWidget {
-  const _MiniPill({
-    required this.icon,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1390,34 +1747,6 @@ class _Panel extends StatelessWidget {
           ],
         ),
         child: child,
-      ),
-    );
-  }
-}
-
-class _PasswordField extends StatelessWidget {
-  const _PasswordField({
-    required this.controller,
-    required this.obscure,
-    required this.onToggle,
-  });
-
-  final TextEditingController controller;
-  final bool obscure;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: 'Password',
-        suffixIcon: IconButton(
-          tooltip: obscure ? 'Show password' : 'Hide password',
-          onPressed: onToggle,
-          icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
-        ),
       ),
     );
   }

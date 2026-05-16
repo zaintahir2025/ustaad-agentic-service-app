@@ -29,9 +29,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('USTAAD'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
-    expect(find.text('CONTINUE'), findsOneWidget);
-    expect(find.text('Create a new account'), findsOneWidget);
-    expect(find.text('Remember email'), findsOneWidget);
+    expect(find.text('LOGIN'), findsWidgets);
+    expect(find.text('JOIN US'), findsOneWidget);
+    expect(find.text('Enter Email Address'), findsOneWidget);
+    expect(find.text('Keep me logged in'), findsOneWidget);
+
+    await tester.tap(find.text('JOIN US'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter Full Name'), findsOneWidget);
+    expect(find.text('Enter Phone Number'), findsOneWidget);
   });
 }
