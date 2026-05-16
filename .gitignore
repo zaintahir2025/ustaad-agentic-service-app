@@ -1,0 +1,17 @@
+.dart_tool/
+.idea/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+supabase/.temp/
+devtools_options.yaml
+
+*.iml
+*.log
+*.pyc
+
+android/.gradle/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
