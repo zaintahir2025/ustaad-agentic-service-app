@@ -1160,7 +1160,7 @@ class _BrandHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Icon(Icons.handyman, size: 58, color: ustaadSecondary),
+        const _UstaadLogoMark(size: 68),
         const SizedBox(height: 12),
         Text(
           'USTAAD',
@@ -1179,6 +1179,66 @@ class _BrandHeader extends StatelessWidget {
   }
 }
 
+class _UstaadLogoMark extends StatelessWidget {
+  const _UstaadLogoMark({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: ustaadPrimary,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Center(
+            child: Text(
+              'U',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: size * 0.54,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
+            ),
+          ),
+          Positioned(
+            right: size * 0.18,
+            top: size * 0.18,
+            child: Container(
+              width: size * 0.16,
+              height: size * 0.16,
+              decoration: const BoxDecoration(
+                color: ustaadSecondary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            left: size * 0.22,
+            right: size * 0.22,
+            bottom: size * 0.20,
+            child: Container(
+              height: size * 0.08,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HeroPanel extends StatelessWidget {
   const _HeroPanel();
 
@@ -1190,7 +1250,7 @@ class _HeroPanel extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(Icons.handyman, size: 46, color: ustaadSecondary),
+              _UstaadLogoMark(size: 54),
               Spacer(),
               _ThemeButton(),
             ],

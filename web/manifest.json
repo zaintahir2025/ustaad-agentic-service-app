@@ -3,9 +3,9 @@
     "short_name": "Ustaad",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#121212",
-    "theme_color": "#C5FF4A",
-    "description": "Agentic AI orchestrator for local service bookings.",
+    "background_color": "#101210",
+    "theme_color": "#0E7C66",
+    "description": "Smart local service bookings.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
