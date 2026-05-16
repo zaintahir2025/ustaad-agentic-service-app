@@ -10,6 +10,7 @@ dependencies:
   cupertino_icons: ^1.0.9
   flutter:
     sdk: flutter
+  geolocator: ^14.0.2
   image_picker: ^1.2.2
   provider: ^6.1.5+1
   shared_preferences: ^2.5.5
@@ -22,3 +23,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/ustaad_logo.png
+    - assets/branding/ustaad_icon.png

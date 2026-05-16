@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,11 +29,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('USTAAD'), findsOneWidget);
+    expect(find.bySemanticsLabel('USTAAD logo'), findsOneWidget);
     expect(find.text('LOGIN'), findsWidgets);
     expect(find.text('JOIN US'), findsOneWidget);
     expect(find.text('Enter Email Address'), findsOneWidget);
     expect(find.text('Keep me logged in'), findsOneWidget);
+    expect(find.byTooltip('Switch theme'), findsOneWidget);
+    expect(find.byIcon(Icons.dark_mode), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Switch theme'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.wb_sunny_outlined), findsOneWidget);
 
     await tester.tap(find.text('JOIN US'));
     await tester.pumpAndSettle();

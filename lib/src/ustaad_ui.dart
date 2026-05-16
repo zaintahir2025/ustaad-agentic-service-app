@@ -1,20 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import 'app_theme.dart';
 import 'models.dart';
 import 'ustaad_state.dart';
 
-const Color _authBackground = Color(0xFF101010);
-const Color _authPanel = Color(0xFF1D1D1D);
-const Color _authFieldFill = Color(0xFF111111);
-const Color _authBorder = Color(0xFF303030);
-const Color _authAccent = Color(0xFFBEFF3D);
-const Color _authAccentWarm = Color(0xFFFF8B2E);
-const Color _authMuted = Color(0xFF8D8F94);
-const Color _authText = Color(0xFFF7F7F7);
-const Color _authError = Color(0xFFFF8A80);
+const Color _authBackground = ustaadBackground;
+const Color _authPanel = ustaadSurface;
+const Color _authFieldFill = ustaadFieldFill;
+const Color _authBorder = ustaadBorder;
+const Color _authAccent = ustaadPrimary;
+const Color _authAccentWarm = ustaadSecondary;
+const Color _authMuted = ustaadMuted;
+const Color _authText = ustaadText;
+const Color _authError = ustaadError;
 
 class UstaadRouter extends StatelessWidget {
   const UstaadRouter({super.key});
@@ -135,6 +139,11 @@ class _GatewayScreenState extends State<GatewayScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const Align(
+                          alignment: Alignment.centerRight,
+                          child: _AuthThemeButton(),
+                        ),
+                        const SizedBox(height: 4),
                         const _AuthBrandHeader(),
                         const SizedBox(height: 20),
                         _AuthPanel(
@@ -399,137 +408,14 @@ class _AuthBrandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const _UrduUstaadMark(),
-        const SizedBox(height: 6),
-        const Text(
-          'USTAAD',
-          style: TextStyle(
-            color: _authText,
-            fontSize: 30,
-            height: 1,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'USTAAD Hazir hai 24/7',
-          style: TextStyle(
-            color: _authMuted.withValues(alpha: 0.82),
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _UrduUstaadMark extends StatelessWidget {
-  const _UrduUstaadMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 178,
-      height: 72,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          const Positioned(
-            left: 26,
-            top: 2,
-            right: 28,
-            child: Text(
-              'استاد',
-              textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(
-                color: _authAccent,
-                fontSize: 54,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-                shadows: [
-                  Shadow(color: _authAccent, blurRadius: 8),
-                  Shadow(color: Colors.white70, blurRadius: 1),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 6,
-            top: 28,
-            child: Container(
-              width: 30,
-              height: 30,
-              decoration: const BoxDecoration(
-                border: Border(
-                  right: BorderSide(color: Colors.white70, width: 5),
-                  top: BorderSide(color: Colors.white70, width: 5),
-                ),
-                borderRadius: BorderRadius.only(
-                  topRight: Radius.circular(22),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 10,
-            top: 18,
-            child: Container(
-              width: 9,
-              height: 9,
-              decoration: const BoxDecoration(
-                color: Colors.white70,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Positioned(
-            right: 18,
-            top: 7,
-            child: Column(
-              children: [
-                Container(width: 3, height: 30, color: Colors.white70),
-                const SizedBox(height: 3),
-                Container(width: 14, height: 14, color: _authAccentWarm),
-                const SizedBox(height: 2),
-                Container(width: 10, height: 14, color: _authAccentWarm),
-              ],
-            ),
-          ),
-          Positioned(
-            right: 128,
-            top: 40,
-            child: Row(
-              children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: _authAccentWarm,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: _authAccentWarm,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    return Semantics(
+      label: 'USTAAD logo',
+      image: true,
+      child: Image.asset(
+        'assets/branding/ustaad_logo.png',
+        width: 248,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
@@ -574,6 +460,45 @@ class _AuthPanel extends StatelessWidget {
           ],
         ),
         child: child,
+      ),
+    );
+  }
+}
+
+class _AuthThemeButton extends StatelessWidget {
+  const _AuthThemeButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<UstaadState>();
+    return Tooltip(
+      message: 'Switch theme',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => context.read<UstaadState>().toggleTheme(),
+          borderRadius: BorderRadius.circular(8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: state.isDark
+                  ? _authFieldFill
+                  : _authPanel.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: state.isDark
+                    ? _authAccent.withValues(alpha: 0.36)
+                    : _authAccentWarm.withValues(alpha: 0.42),
+              ),
+            ),
+            child: Icon(
+              state.isDark ? Icons.dark_mode : Icons.wb_sunny_outlined,
+              color: state.isDark ? _authAccent : _authAccentWarm,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -888,9 +813,14 @@ class CommandCenterScreen extends StatefulWidget {
 class _CommandCenterScreenState extends State<CommandCenterScreen> {
   final _location = TextEditingController(text: 'G-13, Islamabad');
   final _problem = TextEditingController();
+  StreamSubscription<Position>? _locationSubscription;
+  bool _locating = false;
+  bool _trackingLocation = false;
+  String? _locationStatus;
 
   @override
   void dispose() {
+    _locationSubscription?.cancel();
     _location.dispose();
     _problem.dispose();
     super.dispose();
@@ -945,12 +875,50 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
               labelText: 'Location',
               prefixIcon: const Icon(Icons.place),
               suffixIcon: IconButton(
-                tooltip: 'Use current location',
-                icon: const Icon(Icons.my_location),
-                onPressed: () => _location.text = 'Blue Area, Islamabad',
+                tooltip: _trackingLocation
+                    ? 'Stop location tracking'
+                    : 'Track current location',
+                icon: _locating
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _trackingLocation
+                            ? Icons.location_searching
+                            : Icons.my_location,
+                      ),
+                onPressed: _locating ? null : _toggleLocationTracking,
               ),
             ),
           ),
+          if (_locationStatus != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  _trackingLocation
+                      ? Icons.location_searching
+                      : Icons.location_on_outlined,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _locationStatus!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           TextField(
             controller: _problem,
@@ -1043,6 +1011,155 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       return;
     }
     context.read<UstaadState>().startAnalysis(problem, _location.text);
+  }
+
+  Future<void> _toggleLocationTracking() async {
+    if (_trackingLocation) {
+      await _stopLocationTracking();
+      return;
+    }
+
+    await _startLocationTracking();
+  }
+
+  Future<void> _startLocationTracking() async {
+    setState(() {
+      _locating = true;
+      _locationStatus = 'Checking location permission...';
+    });
+
+    final ready = await _ensureLocationReady();
+    if (!mounted) return;
+    if (!ready) {
+      setState(() => _locating = false);
+      return;
+    }
+
+    const currentSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+      timeLimit: Duration(seconds: 20),
+    );
+    const streamSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+    );
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: currentSettings,
+      );
+      _applyPosition(position, tracking: false);
+
+      await _locationSubscription?.cancel();
+      _locationSubscription = Geolocator.getPositionStream(
+        locationSettings: streamSettings,
+      ).listen(
+        (position) => _applyPosition(position, tracking: true),
+        onError: (Object error) {
+          if (!mounted) return;
+          setState(() {
+            _trackingLocation = false;
+            _locationStatus = _locationErrorMessage(error);
+          });
+        },
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _trackingLocation = true;
+        _locationStatus = 'Tracking live location. Accuracy: '
+            '${position.accuracy.toStringAsFixed(0)} m.';
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _trackingLocation = false;
+        _locationStatus = _locationErrorMessage(error);
+      });
+    }
+  }
+
+  Future<void> _stopLocationTracking() async {
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
+    if (!mounted) return;
+    setState(() {
+      _trackingLocation = false;
+      _locationStatus = 'Location tracking stopped.';
+    });
+  }
+
+  Future<bool> _ensureLocationReady() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        setState(() {
+          _locationStatus = 'Turn on location services to use tracking.';
+        });
+      }
+      return false;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied) {
+      if (mounted) {
+        setState(() {
+          _locationStatus = 'Location permission was denied.';
+        });
+      }
+      return false;
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        setState(() {
+          _locationStatus =
+              'Location permission is blocked. Enable it in settings.';
+        });
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  void _applyPosition(Position position, {required bool tracking}) {
+    if (!mounted) return;
+    final label = _formatPosition(position);
+    setState(() {
+      _location.text = label;
+      _locationStatus = tracking
+          ? 'Live location updated. Accuracy: '
+              '${position.accuracy.toStringAsFixed(0)} m.'
+          : 'Current location found. Accuracy: '
+              '${position.accuracy.toStringAsFixed(0)} m.';
+    });
+  }
+
+  String _formatPosition(Position position) {
+    final lat = position.latitude.toStringAsFixed(5);
+    final lng = position.longitude.toStringAsFixed(5);
+    return 'Current location: $lat, $lng';
+  }
+
+  String _locationErrorMessage(Object error) {
+    if (error is TimeoutException) {
+      return 'Location timed out. Try again near a window or outdoors.';
+    }
+    if (error is PermissionDeniedException) {
+      return 'Location permission was denied.';
+    }
+    if (error is LocationServiceDisabledException) {
+      return 'Turn on location services to use tracking.';
+    }
+    return 'Could not read location. Check permission and try again.';
   }
 }
 
