@@ -29,6 +29,18 @@ class UstaadRouter extends StatelessWidget {
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final slide = Tween<Offset>(
+          begin: const Offset(0.02, 0),
+          end: Offset.zero,
+        ).animate(animation);
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: slide, child: child),
+        );
+      },
       child: screen,
     );
   }
@@ -380,13 +392,13 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _AppBarLine(
-            title: user == null ? 'Book a service' : 'Hi ${user.firstName}',
-            subtitle: 'Verified services, smart matching, live bookings',
+            title: user == null ? 'Book' : 'Hi ${user.firstName}',
+            subtitle: state.backendOnline ? 'Live' : 'Demo',
             showNav: true,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _FeatureStrip(online: state.backendOnline),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           if (wide)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,7 +410,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             )
           else ...[
             _requestPanel(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             _quickServices(),
           ],
         ],
@@ -429,37 +441,38 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             minLines: 5,
             maxLines: 7,
             decoration: const InputDecoration(
-              labelText: 'Service request',
-              hintText: 'Mujhe kal subah G-13 mein AC technician chahiye',
+              labelText: 'Request',
+              hintText: 'AC not cooling in G-13',
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               _ExampleChip(
-                label: 'Kal subah AC',
+                label: 'AC',
                 onTap: () {
                   _problem.text =
                       'Mujhe kal subah G-13 mein AC technician chahiye';
                 },
               ),
               _ExampleChip(
-                label: 'Urgent pani leak',
+                label: 'Leak',
                 onTap: () => _problem.text = 'Urgent pani leak in kitchen',
               ),
               _ExampleChip(
-                label: 'اے سی ٹھنڈا نہیں',
-                onTap: () => _problem.text = 'اے سی ٹھنڈا نہیں ہو رہا',
+                label: 'Urdu',
+                onTap: () => _problem.text =
+                    '\u0627\u06d2 \u0633\u06cc \u0679\u06be\u0646\u0688\u0627 \u0646\u06c1\u06cc\u06ba \u06c1\u0648 \u0631\u06c1\u0627',
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           ElevatedButton.icon(
             onPressed: _analyze,
             icon: const Icon(Icons.search),
-            label: const Text('FIND PROVIDERS'),
+            label: const Text('FIND'),
           ),
         ],
       ),
@@ -486,10 +499,10 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                   fontWeight: FontWeight.w900,
                 ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 8,
+            runSpacing: 8,
             children: services.map((service) {
               return ActionChip(
                 avatar: Icon(service.$1, size: 18),
@@ -499,32 +512,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 },
               );
             }).toList(),
-          ),
-          const SizedBox(height: 18),
-          const _FeatureRow(
-            icon: Icons.translate,
-            title: 'Multilingual intent',
-            subtitle: 'English, Urdu, Roman Urdu',
-          ),
-          const _FeatureRow(
-            icon: Icons.verified_user,
-            title: 'Trust score',
-            subtitle: 'Reliability, response, reviews',
-          ),
-          const _FeatureRow(
-            icon: Icons.route,
-            title: 'Traceable workflow',
-            subtitle: 'Find, rank, book, follow up',
-          ),
-          const _FeatureRow(
-            icon: Icons.rate_review,
-            title: 'Verified reviews',
-            subtitle: 'Read and rate providers',
-          ),
-          const _FeatureRow(
-            icon: Icons.manage_accounts,
-            title: 'Profile control',
-            subtitle: 'Photo, details, language',
           ),
         ],
       ),
@@ -558,7 +545,7 @@ class SelectionScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _AppBarLine(
-            title: intent.description,
+            title: 'Matches',
             subtitle: intent.location,
             leading: IconButton(
               tooltip: 'Back',
@@ -617,7 +604,7 @@ class WorkflowScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _AppBarLine(
-            title: saving ? 'Confirming booking' : 'Booking confirmed',
+            title: saving ? 'Confirming' : 'Confirmed',
             subtitle: 'ETA: $eta minutes',
             leading: IconButton(
               tooltip: 'Close',
@@ -739,7 +726,7 @@ class BookingsScreen extends StatelessWidget {
         children: [
           _AppBarLine(
             title: 'Bookings',
-            subtitle: 'Status, contacts, reviews',
+            subtitle: 'Status',
             leading: IconButton(
               tooltip: 'Home',
               icon: const Icon(Icons.arrow_back),
@@ -1017,17 +1004,28 @@ class _Stage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<UstaadState>();
     final width = MediaQuery.sizeOf(context).width;
-    final horizontal = width >= 760 ? 28.0 : 16.0;
+    final compact = width < 640;
+    final horizontal = width >= 760 ? 28.0 : 14.0;
+    final shellScreen = state.screen == UstaadScreen.commandCenter ||
+        state.screen == UstaadScreen.bookings ||
+        state.screen == UstaadScreen.profile;
+    final showBottomNav = compact && state.isSignedIn && shellScreen;
 
     return Scaffold(
+      bottomNavigationBar: showBottomNav ? const _BottomNav() : null,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: wideMaxWidth),
             child: SingleChildScrollView(
-              padding:
-                  EdgeInsets.symmetric(horizontal: horizontal, vertical: 18),
+              padding: EdgeInsets.fromLTRB(
+                horizontal,
+                compact ? 12 : 18,
+                horizontal,
+                showBottomNav ? 18 : (compact ? 12 : 18),
+              ),
               child: child,
             ),
           ),
@@ -1053,6 +1051,7 @@ class _AppBarLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<UstaadState>();
+    final compact = MediaQuery.sizeOf(context).width < 640;
     return Row(
       children: [
         if (leading != null) ...[leading!, const SizedBox(width: 8)],
@@ -1068,18 +1067,19 @@ class _AppBarLine extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
               ),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              if (subtitle.isNotEmpty && !compact)
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
-        if (showNav && state.isSignedIn) ...[
+        if (showNav && state.isSignedIn && !compact) ...[
           IconButton(
             tooltip: 'Bookings',
             icon: const Icon(Icons.receipt_long),
@@ -1096,7 +1096,58 @@ class _AppBarLine extends StatelessWidget {
             onPressed: () => context.read<UstaadState>().signOut(),
           ),
         ],
+        if (showNav && state.isSignedIn && compact)
+          IconButton(
+            tooltip: 'Logout',
+            icon: const Icon(Icons.logout),
+            onPressed: () => context.read<UstaadState>().signOut(),
+          ),
         const _ThemeButton(),
+      ],
+    );
+  }
+}
+
+class _BottomNav extends StatelessWidget {
+  const _BottomNav();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<UstaadState>();
+    final selectedIndex = switch (state.screen) {
+      UstaadScreen.bookings => 1,
+      UstaadScreen.profile => 2,
+      _ => 0,
+    };
+
+    return NavigationBar(
+      selectedIndex: selectedIndex,
+      onDestinationSelected: (index) {
+        final state = context.read<UstaadState>();
+        if (index == 0) {
+          state.openHome();
+        } else if (index == 1) {
+          state.openBookings();
+        } else {
+          state.openProfile();
+        }
+      },
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home),
+          label: 'Home',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.receipt_long_outlined),
+          selectedIcon: Icon(Icons.receipt_long),
+          label: 'Bookings',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline),
+          selectedIcon: Icon(Icons.person),
+          label: 'Profile',
+        ),
       ],
     );
   }
@@ -1133,7 +1184,6 @@ class _HeroPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1153,28 +1203,16 @@ class _HeroPanel extends StatelessWidget {
                   height: 1,
                 ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Book trusted services from one natural-language request.',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 24),
-          const _FeatureRow(
-            icon: Icons.translate,
-            title: 'English, Urdu, Roman Urdu',
-            subtitle: 'Understands real customer wording',
-          ),
-          const _FeatureRow(
-            icon: Icons.auto_awesome,
-            title: 'Smart provider ranking',
-            subtitle: 'Trust, distance, price, response',
-          ),
-          const _FeatureRow(
-            icon: Icons.cloud_done,
-            title: 'Supabase connected',
-            subtitle: 'Auth, bookings, profile, reviews',
+          const SizedBox(height: 18),
+          const Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _MiniPill(icon: Icons.translate, label: 'Urdu'),
+              _MiniPill(icon: Icons.verified, label: 'Trusted'),
+              _MiniPill(icon: Icons.flash_on, label: 'Fast'),
+              _MiniPill(icon: Icons.cloud_done, label: 'Live'),
+            ],
           ),
         ],
       ),
@@ -1190,14 +1228,11 @@ class _FeatureStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      (Icons.translate, '3 languages'),
-      (Icons.verified, 'Trust score'),
-      (Icons.schedule, 'Live status'),
+      (Icons.translate, 'Urdu'),
+      (Icons.verified, 'Trust'),
+      (Icons.schedule, 'Status'),
       (Icons.rate_review, 'Reviews'),
-      (
-        online ? Icons.cloud_done : Icons.cloud_off,
-        online ? 'Supabase live' : 'Demo data'
-      ),
+      (online ? Icons.cloud_done : Icons.cloud_off, online ? 'Live' : 'Demo'),
     ];
     return Wrap(
       spacing: 8,
@@ -1213,57 +1248,31 @@ class _FeatureStrip extends StatelessWidget {
   }
 }
 
-class _FeatureRow extends StatelessWidget {
-  const _FeatureRow({
+class _MiniPill extends StatelessWidget {
+  const _MiniPill({
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.label,
   });
 
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+          Icon(icon, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -1292,14 +1301,36 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Theme.of(context).dividerColor),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, animatedChild) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 10 * (1 - value)),
+            child: animatedChild,
+          ),
+        );
+      },
+      child: Container(
+        padding:
+            EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 14 : 18),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Theme.of(context).dividerColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -1416,10 +1447,10 @@ class _IntentSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      ('Service', intent.role),
+      ('Type', intent.role),
       ('Time', intent.timeLabel),
-      ('Language', intent.language),
-      ('Confidence', '${(intent.confidence * 100).round()}%'),
+      ('Lang', intent.language),
+      ('Match', '${(intent.confidence * 100).round()}%'),
     ];
 
     return _Panel(
@@ -1440,7 +1471,7 @@ class _IntentSummary extends StatelessWidget {
 class _TracePanel extends StatelessWidget {
   const _TracePanel({
     required this.events,
-    this.initiallyExpanded = true,
+    this.initiallyExpanded = false,
   });
 
   final List<WorkflowEvent> events;
@@ -1456,17 +1487,19 @@ class _TracePanel extends StatelessWidget {
         childrenPadding: EdgeInsets.zero,
         initiallyExpanded: initiallyExpanded,
         title: const Text(
-          'Workflow trace',
+          'Trace',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        subtitle: const Text('Understand -> find -> rank -> book'),
         children: events.map((event) {
           return ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.check_circle_outline),
-            title: Text('${event.step}: ${event.agentName}'),
-            subtitle: Text('${event.message}\nTool: ${event.toolName}'),
-            isThreeLine: true,
+            title: Text(event.step),
+            subtitle: Text(
+              event.message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
             dense: true,
           );
         }).toList(),
@@ -1547,36 +1580,31 @@ class _ProviderCardState extends State<_ProviderCard> {
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 4),
-                    Text('${provider.role} - ${provider.distanceKm} km'),
-                    Text('${provider.rating} rating - Rs. ${provider.price}'),
+                    Text('${provider.role} • ${provider.distanceKm} km'),
+                    Text('${provider.rating} ★ • Rs. ${provider.price}'),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Text(provider.nextSlot),
+          _StatusTile(
+            icon: Icons.event_available,
+            title: provider.nextSlot,
+            subtitle: '${provider.responseTimeMinutes} min response',
+          ),
           const SizedBox(height: 4),
           LinearProgressIndicator(
             value: score,
             minHeight: 6,
             borderRadius: BorderRadius.circular(999),
           ),
-          const SizedBox(height: 8),
-          Text(
-            provider.reason,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Row(
             children: [
               _MetricChip(
                 icon: Icons.timer,
-                label: '${provider.responseTimeMinutes} min',
+                label: '${provider.jobsCompleted} jobs',
               ),
               const SizedBox(width: 8),
               _MetricChip(

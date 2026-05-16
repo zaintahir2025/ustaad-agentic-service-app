@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-const Color ustaadPrimary = Color(0xFFC5FF4A);
-const Color ustaadSecondary = Color(0xFFFF6B00);
+const Color ustaadPrimary = Color(0xFF0E7C66);
+const Color ustaadSecondary = Color(0xFFF4A261);
 
 class UstaadTheme {
   static ThemeData get light {
@@ -9,15 +9,16 @@ class UstaadTheme {
       seedColor: ustaadPrimary,
       brightness: Brightness.light,
     ).copyWith(
-      primary: const Color(0xFF426300),
-      secondary: const Color(0xFFB34700),
+      primary: ustaadPrimary,
+      secondary: ustaadSecondary,
       surface: const Color(0xFFFFFFFF),
+      surfaceContainerHighest: const Color(0xFFEFF4F1),
     );
 
     return _base(scheme).copyWith(
-      scaffoldBackgroundColor: const Color(0xFFF5F6F1),
+      scaffoldBackgroundColor: const Color(0xFFF7F8F4),
       cardColor: Colors.white,
-      dividerColor: const Color(0xFFE0E3DA),
+      dividerColor: const Color(0xFFDDE6E1),
     );
   }
 
@@ -26,14 +27,15 @@ class UstaadTheme {
       seedColor: ustaadPrimary,
       brightness: Brightness.dark,
     ).copyWith(
-      primary: ustaadPrimary,
+      primary: const Color(0xFF5EE0C2),
       secondary: ustaadSecondary,
-      surface: const Color(0xFF1B1B1B),
+      surface: const Color(0xFF171A18),
+      surfaceContainerHighest: const Color(0xFF222823),
     );
 
     return _base(scheme).copyWith(
-      scaffoldBackgroundColor: const Color(0xFF121212),
-      cardColor: const Color(0xFF1B1B1B),
+      scaffoldBackgroundColor: const Color(0xFF101210),
+      cardColor: const Color(0xFF171A18),
       dividerColor: Colors.white12,
     );
   }
@@ -47,7 +49,7 @@ class UstaadTheme {
         filled: true,
         fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: scheme.outlineVariant),
@@ -84,6 +86,13 @@ class UstaadTheme {
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         side: BorderSide(color: scheme.outlineVariant),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        elevation: 0,
+        height: 64,
+        backgroundColor: scheme.surface,
+        indicatorColor: scheme.primaryContainer,
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
