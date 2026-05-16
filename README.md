@@ -72,11 +72,19 @@ flutter pub get
 flutter run -d chrome
 ```
 
+GitHub Pages builds the web app with this base path:
+
+```sh
+flutter build web --release --base-href "/ustaad-agentic-service-app/"
+```
+
 Android:
 
 ```sh
 flutter build apk --debug
 ```
+
+GitHub Actions also runs web, Android, and iOS debug verification on every push to `main`.
 
 ## Verify
 
