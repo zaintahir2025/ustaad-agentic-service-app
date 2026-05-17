@@ -6,19 +6,48 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import 'app_theme.dart';
 import 'models.dart';
 import 'ustaad_state.dart';
 
-const Color _authBackground = ustaadBackground;
-const Color _authPanel = ustaadSurface;
-const Color _authFieldFill = ustaadFieldFill;
-const Color _authBorder = ustaadBorder;
-const Color _authAccent = ustaadPrimary;
-const Color _authAccentWarm = ustaadSecondary;
-const Color _authMuted = ustaadMuted;
-const Color _authText = ustaadText;
-const Color _authError = ustaadError;
+class _AuthPalette {
+  const _AuthPalette({
+    required this.background,
+    required this.panel,
+    required this.fieldFill,
+    required this.border,
+    required this.accent,
+    required this.warmAccent,
+    required this.muted,
+    required this.text,
+    required this.error,
+  });
+
+  final Color background;
+  final Color panel;
+  final Color fieldFill;
+  final Color border;
+  final Color accent;
+  final Color warmAccent;
+  final Color muted;
+  final Color text;
+  final Color error;
+
+  static _AuthPalette of(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return _AuthPalette(
+      background: theme.scaffoldBackgroundColor,
+      panel: theme.cardColor,
+      fieldFill: theme.inputDecorationTheme.fillColor ?? scheme.surface,
+      border: theme.dividerColor,
+      accent: scheme.primary,
+      warmAccent: scheme.secondary,
+      muted: scheme.onSurfaceVariant,
+      text: scheme.onSurface,
+      error: scheme.error,
+    );
+  }
+}
 
 class UstaadRouter extends StatelessWidget {
   const UstaadRouter({super.key});
@@ -116,13 +145,17 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return Scaffold(
-      backgroundColor: _authBackground,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             final horizontal = constraints.maxWidth < 420 ? 18.0 : 28.0;
             final vertical = constraints.maxHeight < 720 ? 18.0 : 28.0;
+            final contentWidth = (constraints.maxWidth - (horizontal * 2))
+                .clamp(0.0, 420.0)
+                .toDouble();
 
             return SingleChildScrollView(
               padding: EdgeInsets.symmetric(
@@ -134,17 +167,21 @@ class _GatewayScreenState extends State<GatewayScreen> {
                   minHeight: constraints.maxHeight - (vertical * 2),
                 ),
                 child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
+                  child: SizedBox(
+                    width: contentWidth,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Align(
                           alignment: Alignment.centerRight,
                           child: _AuthThemeButton(),
                         ),
                         const SizedBox(height: 4),
-                        const _AuthBrandHeader(),
+                        const Align(
+                          alignment: Alignment.center,
+                          child: _AuthBrandHeader(),
+                        ),
                         const SizedBox(height: 20),
                         _AuthPanel(
                           child: Column(
@@ -190,6 +227,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   Widget _loginForm() {
     final busy = context.watch<UstaadState>().authBusy;
+    final colors = _AuthPalette.of(context);
     return Column(
       key: const ValueKey('login'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -211,7 +249,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
           child: TextButton(
             onPressed: busy ? null : _showResetDialog,
             style: TextButton.styleFrom(
-              foregroundColor: _authAccent,
+              foregroundColor: colors.accent,
               padding: const EdgeInsets.only(top: 8, bottom: 8),
               textStyle: const TextStyle(
                 fontSize: 12,
@@ -226,11 +264,11 @@ class _GatewayScreenState extends State<GatewayScreen> {
         _AuthButton(
           onPressed: busy ? null : _submitLogin,
           child: busy
-              ? const SizedBox.square(
+              ? SizedBox.square(
                   dimension: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: _authFieldFill,
+                    color: colors.fieldFill,
                   ),
                 )
               : const Text('LOGIN'),
@@ -246,6 +284,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   Widget _joinForm() {
     final busy = context.watch<UstaadState>().authBusy;
+    final colors = _AuthPalette.of(context);
     return Column(
       key: const ValueKey('join'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -282,11 +321,11 @@ class _GatewayScreenState extends State<GatewayScreen> {
         _AuthButton(
           onPressed: busy ? null : _submitJoin,
           child: busy
-              ? const SizedBox.square(
+              ? SizedBox.square(
                   dimension: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: _authFieldFill,
+                    color: colors.fieldFill,
                   ),
                 )
               : const Text('JOIN US'),
@@ -428,6 +467,8 @@ class _AuthPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.94, end: 1),
       duration: const Duration(milliseconds: 220),
@@ -446,16 +487,16 @@ class _AuthPanel extends StatelessWidget {
           18,
         ),
         decoration: BoxDecoration(
-          color: _authPanel,
+          color: colors.panel,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: _authAccent.withValues(alpha: 0.24),
+            color: colors.accent.withValues(alpha: dark ? 0.24 : 0.34),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.42),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
+              color: Colors.black.withValues(alpha: dark ? 0.42 : 0.10),
+              blurRadius: dark ? 24 : 18,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
@@ -471,6 +512,7 @@ class _AuthThemeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<UstaadState>();
+    final colors = _AuthPalette.of(context);
     return Tooltip(
       message: 'Switch theme',
       child: Material(
@@ -484,18 +526,18 @@ class _AuthThemeButton extends StatelessWidget {
             height: 44,
             decoration: BoxDecoration(
               color: state.isDark
-                  ? _authFieldFill
-                  : _authPanel.withValues(alpha: 0.92),
+                  ? colors.fieldFill
+                  : colors.panel.withValues(alpha: 0.92),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: state.isDark
-                    ? _authAccent.withValues(alpha: 0.36)
-                    : _authAccentWarm.withValues(alpha: 0.42),
+                    ? colors.accent.withValues(alpha: 0.36)
+                    : colors.warmAccent.withValues(alpha: 0.42),
               ),
             ),
             child: Icon(
               state.isDark ? Icons.dark_mode : Icons.wb_sunny_outlined,
-              color: state.isDark ? _authAccent : _authAccentWarm,
+              color: state.isDark ? colors.accent : colors.warmAccent,
             ),
           ),
         ),
@@ -517,6 +559,7 @@ class _AuthTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return Column(
       children: [
         Row(
@@ -540,7 +583,7 @@ class _AuthTabs extends StatelessWidget {
         const SizedBox(height: 12),
         Stack(
           children: [
-            Container(height: 1, color: _authBorder),
+            Container(height: 1, color: colors.border),
             AnimatedAlign(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
@@ -549,7 +592,7 @@ class _AuthTabs extends StatelessWidget {
                   : Alignment.centerLeft,
               child: FractionallySizedBox(
                 widthFactor: 0.5,
-                child: Container(height: 2, color: _authAccent),
+                child: Container(height: 2, color: colors.accent),
               ),
             ),
           ],
@@ -572,6 +615,7 @@ class _AuthTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
@@ -580,7 +624,7 @@ class _AuthTabButton extends StatelessWidget {
         child: AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 160),
           style: TextStyle(
-            color: selected ? _authAccent : _authMuted,
+            color: selected ? colors.accent : colors.muted,
             fontSize: 16,
             fontWeight: FontWeight.w900,
             letterSpacing: 0,
@@ -611,6 +655,7 @@ class _AuthTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -621,13 +666,16 @@ class _AuthTextField extends StatelessWidget {
           keyboardType: keyboardType,
           textCapitalization: textCapitalization,
           autofillHints: autofillHints,
-          cursorColor: _authAccent,
-          style: const TextStyle(
-            color: _authText,
+          cursorColor: colors.accent,
+          style: TextStyle(
+            color: colors.text,
             fontSize: 16,
             fontWeight: FontWeight.w800,
           ),
-          decoration: _authInputDecoration(errorText: errorText),
+          decoration: _authInputDecoration(
+            context,
+            errorText: errorText,
+          ),
         ),
       ],
     );
@@ -647,6 +695,7 @@ class _AuthPasswordField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -656,19 +705,20 @@ class _AuthPasswordField extends StatelessWidget {
           controller: controller,
           obscureText: obscure,
           autofillHints: const [AutofillHints.password],
-          cursorColor: _authAccent,
-          style: const TextStyle(
-            color: _authText,
+          cursorColor: colors.accent,
+          style: TextStyle(
+            color: colors.text,
             fontSize: 16,
             fontWeight: FontWeight.w800,
           ),
           decoration: _authInputDecoration(
+            context,
             suffixIcon: IconButton(
               tooltip: obscure ? 'Show password' : 'Hide password',
               onPressed: onToggle,
               icon: Icon(
                 obscure ? Icons.visibility : Icons.visibility_off,
-                color: _authMuted,
+                color: colors.muted,
               ),
             ),
           ),
@@ -685,10 +735,11 @@ class _AuthFieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return Text(
       label,
-      style: const TextStyle(
-        color: _authText,
+      style: TextStyle(
+        color: colors.text,
         fontSize: 14,
         fontWeight: FontWeight.w900,
         letterSpacing: 0,
@@ -697,35 +748,37 @@ class _AuthFieldLabel extends StatelessWidget {
   }
 }
 
-InputDecoration _authInputDecoration({
+InputDecoration _authInputDecoration(
+  BuildContext context, {
   String? errorText,
   Widget? suffixIcon,
 }) {
+  final colors = _AuthPalette.of(context);
   final border = OutlineInputBorder(
     borderRadius: BorderRadius.circular(7),
-    borderSide: const BorderSide(color: _authBorder),
+    borderSide: BorderSide(color: colors.border),
   );
 
   return InputDecoration(
     filled: true,
-    fillColor: _authFieldFill,
+    fillColor: colors.fieldFill,
     errorText: errorText,
-    errorStyle: const TextStyle(color: _authError, fontWeight: FontWeight.w700),
+    errorStyle: TextStyle(color: colors.error, fontWeight: FontWeight.w700),
     suffixIcon: suffixIcon,
     contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
     border: border,
     enabledBorder: border,
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(7),
-      borderSide: const BorderSide(color: _authAccent, width: 1.2),
+      borderSide: BorderSide(color: colors.accent, width: 1.2),
     ),
     errorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(7),
-      borderSide: const BorderSide(color: _authError),
+      borderSide: BorderSide(color: colors.error),
     ),
     focusedErrorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(7),
-      borderSide: const BorderSide(color: _authError, width: 1.2),
+      borderSide: BorderSide(color: colors.error, width: 1.2),
     ),
   );
 }
@@ -741,15 +794,17 @@ class _AuthButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return SizedBox(
       height: 52,
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: _authAccent,
-          foregroundColor: _authFieldFill,
-          disabledBackgroundColor: _authAccent.withValues(alpha: 0.55),
-          disabledForegroundColor: _authFieldFill.withValues(alpha: 0.7),
+          backgroundColor: colors.accent,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          disabledBackgroundColor: colors.accent.withValues(alpha: 0.55),
+          disabledForegroundColor:
+              Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           textStyle: const TextStyle(
@@ -775,13 +830,14 @@ class _AuthRememberRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
     return Row(
       children: [
         Expanded(
           child: Text(
             'Keep me logged in',
             style: TextStyle(
-              color: _authMuted.withValues(alpha: 0.82),
+              color: colors.muted.withValues(alpha: 0.82),
               fontSize: 14,
               fontWeight: FontWeight.w800,
             ),
@@ -791,9 +847,9 @@ class _AuthRememberRow extends StatelessWidget {
           value: value,
           onChanged: onChanged,
           activeThumbColor: Colors.white,
-          activeTrackColor: _authAccent.withValues(alpha: 0.92),
+          activeTrackColor: colors.accent.withValues(alpha: 0.92),
           inactiveThumbColor: Colors.white,
-          inactiveTrackColor: _authBorder,
+          inactiveTrackColor: colors.border,
           trackOutlineColor: WidgetStateProperty.resolveWith(
             (_) => Colors.transparent,
           ),

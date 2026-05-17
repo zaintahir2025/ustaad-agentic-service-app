@@ -9,37 +9,44 @@ const Color ustaadBorder = Color(0xFF303030);
 const Color ustaadMuted = Color(0xFF8D8F94);
 const Color ustaadText = Color(0xFFF7F7F7);
 const Color ustaadError = Color(0xFFFF8A80);
+const Color ustaadLightPrimary = Color(0xFF6D9700);
+const Color ustaadLightBackground = Color(0xFFF7F8F0);
+const Color ustaadLightSurface = Color(0xFFFFFFFF);
+const Color ustaadLightFieldFill = Color(0xFFFFFFFF);
+const Color ustaadLightBorder = Color(0xFFD7DDCB);
+const Color ustaadLightMuted = Color(0xFF62685B);
+const Color ustaadLightText = Color(0xFF101010);
 
 class UstaadTheme {
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(
-      seedColor: ustaadPrimary,
-      brightness: Brightness.dark,
+      seedColor: ustaadLightPrimary,
+      brightness: Brightness.light,
     ).copyWith(
-      primary: ustaadPrimary,
-      onPrimary: ustaadFieldFill,
-      primaryContainer: const Color(0xFF2A3A14),
-      onPrimaryContainer: ustaadPrimary,
+      primary: ustaadLightPrimary,
+      onPrimary: Colors.white,
+      primaryContainer: const Color(0xFFE9F7C8),
+      onPrimaryContainer: const Color(0xFF253500),
       secondary: ustaadSecondary,
       onSecondary: Colors.black,
-      secondaryContainer: const Color(0xFF3B2414),
-      onSecondaryContainer: ustaadSecondary,
-      surface: const Color(0xFF181818),
-      onSurface: ustaadText,
-      onSurfaceVariant: ustaadMuted,
-      surfaceContainerHighest: const Color(0xFF242424),
-      outline: const Color(0xFF505050),
-      outlineVariant: ustaadBorder,
-      error: ustaadError,
-      onError: Colors.black,
+      secondaryContainer: const Color(0xFFFFE2CC),
+      onSecondaryContainer: const Color(0xFF3C1B00),
+      surface: ustaadLightSurface,
+      onSurface: ustaadLightText,
+      onSurfaceVariant: ustaadLightMuted,
+      surfaceContainerHighest: const Color(0xFFEFF3E6),
+      outline: const Color(0xFF818875),
+      outlineVariant: ustaadLightBorder,
+      error: const Color(0xFFB3261E),
+      onError: Colors.white,
     );
 
     return _base(
       scheme,
-      background: const Color(0xFF151515),
-      card: const Color(0xFF202020),
-      divider: const Color(0xFF343434),
-      fieldFill: const Color(0xFF151515),
+      background: ustaadLightBackground,
+      card: ustaadLightSurface,
+      divider: ustaadLightBorder,
+      fieldFill: ustaadLightFieldFill,
     );
   }
 
@@ -85,7 +92,7 @@ class UstaadTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      brightness: Brightness.dark,
+      brightness: scheme.brightness,
       fontFamily: 'Roboto',
       scaffoldBackgroundColor: background,
       cardColor: card,
@@ -99,12 +106,12 @@ class UstaadTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: fieldFill,
-        labelStyle: const TextStyle(
-          color: ustaadMuted,
+        labelStyle: TextStyle(
+          color: scheme.onSurfaceVariant,
           fontWeight: FontWeight.w700,
         ),
-        floatingLabelStyle: const TextStyle(
-          color: ustaadPrimary,
+        floatingLabelStyle: TextStyle(
+          color: scheme.primary,
           fontWeight: FontWeight.w800,
         ),
         contentPadding:
