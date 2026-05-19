@@ -121,6 +121,9 @@ class _GatewayScreenState extends State<GatewayScreen> {
   bool _creatingAccount = false;
   bool _remember = false;
   bool _obscure = true;
+  int _failedLoginAttempts = 0;
+  DateTime? _loginLockedUntil;
+  Timer? _lockoutTimer;
   String? _emailError;
   String? _phoneError;
 
@@ -134,6 +137,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   @override
   void dispose() {
+    _lockoutTimer?.cancel();
     _loginEmail.dispose();
     _loginPassword.dispose();
     _joinName.dispose();
@@ -228,6 +232,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
   Widget _loginForm() {
     final busy = context.watch<UstaadState>().authBusy;
     final colors = _AuthPalette.of(context);
+    final loginLocked = _loginLocked;
     return Column(
       key: const ValueKey('login'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -262,7 +267,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
         ),
         const SizedBox(height: 18),
         _AuthButton(
-          onPressed: busy ? null : _submitLogin,
+          onPressed: busy || loginLocked ? null : _submitLogin,
           child: busy
               ? SizedBox.square(
                   dimension: 18,
@@ -271,8 +276,15 @@ class _GatewayScreenState extends State<GatewayScreen> {
                     color: colors.fieldFill,
                   ),
                 )
-              : const Text('LOGIN'),
+              : Text(loginLocked ? _loginCooldownLabel : 'LOGIN'),
         ),
+        if (loginLocked) ...[
+          const SizedBox(height: 10),
+          _SecurityInlineMessage(
+            icon: Icons.lock_clock,
+            text: 'Too many failed attempts. Sign in unlocks shortly.',
+          ),
+        ],
         const SizedBox(height: 14),
         _AuthRememberRow(
           value: _remember,
@@ -285,6 +297,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
   Widget _joinForm() {
     final busy = context.watch<UstaadState>().authBusy;
     final colors = _AuthPalette.of(context);
+    final strength = _passwordStrength(_joinPassword.text);
     return Column(
       key: const ValueKey('join'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -316,7 +329,10 @@ class _GatewayScreenState extends State<GatewayScreen> {
           controller: _joinPassword,
           obscure: _obscure,
           onToggle: () => setState(() => _obscure = !_obscure),
+          onChanged: (_) => setState(() {}),
         ),
+        const SizedBox(height: 10),
+        _PasswordStrengthMeter(strength: strength),
         const SizedBox(height: 18),
         _AuthButton(
           onPressed: busy ? null : _submitJoin,
@@ -340,6 +356,10 @@ class _GatewayScreenState extends State<GatewayScreen> {
   }
 
   Future<void> _submitLogin() async {
+    if (_loginLocked) {
+      _show('Sign in is locked for $_loginCooldownLabel.');
+      return;
+    }
     final email = _loginEmail.text.trim();
     final password = _loginPassword.text.trim();
     if (!_validEmail(email)) {
@@ -356,7 +376,12 @@ class _GatewayScreenState extends State<GatewayScreen> {
           password: password,
           remember: _remember,
         );
-    if (!mounted || ok) return;
+    if (!mounted) return;
+    if (ok) {
+      _clearLoginGuard();
+      return;
+    }
+    _recordFailedLogin();
     _show(context.read<UstaadState>().bannerMessage ?? 'Login failed.');
   }
 
@@ -377,8 +402,9 @@ class _GatewayScreenState extends State<GatewayScreen> {
       return;
     }
     if (_emailError != null || _phoneError != null) return;
-    if (password.length < 6) {
-      _show('Password must be at least 6 characters.');
+    final strength = _passwordStrength(password);
+    if (!strength.acceptable) {
+      _show('Use 8+ chars with upper, lower, number, and symbol.');
       return;
     }
 
@@ -439,6 +465,45 @@ class _GatewayScreenState extends State<GatewayScreen> {
     if (!mounted) return;
     _show(state.bannerMessage ??
         (ok ? 'Password reset email sent.' : 'Password reset failed.'));
+  }
+
+  bool get _loginLocked {
+    final until = _loginLockedUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  String get _loginCooldownLabel {
+    final until = _loginLockedUntil;
+    if (until == null) return 'TRY AGAIN';
+    final seconds = until.difference(DateTime.now()).inSeconds.clamp(1, 60);
+    return 'TRY AGAIN IN ${seconds}s';
+  }
+
+  void _recordFailedLogin() {
+    _failedLoginAttempts += 1;
+    if (_failedLoginAttempts < 5) return;
+    _loginLockedUntil = DateTime.now().add(const Duration(seconds: 30));
+    _lockoutTimer?.cancel();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (!_loginLocked) {
+        _clearLoginGuard();
+        return;
+      }
+      setState(() {});
+    });
+    setState(() {});
+  }
+
+  void _clearLoginGuard() {
+    _failedLoginAttempts = 0;
+    _loginLockedUntil = null;
+    _lockoutTimer?.cancel();
+    _lockoutTimer = null;
+    if (mounted) setState(() {});
   }
 }
 
@@ -687,11 +752,13 @@ class _AuthPasswordField extends StatelessWidget {
     required this.controller,
     required this.obscure,
     required this.onToggle,
+    this.onChanged,
   });
 
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -703,6 +770,7 @@ class _AuthPasswordField extends StatelessWidget {
         const SizedBox(height: 8),
         TextField(
           controller: controller,
+          onChanged: onChanged,
           obscureText: obscure,
           autofillHints: const [AutofillHints.password],
           cursorColor: colors.accent,
@@ -720,6 +788,107 @@ class _AuthPasswordField extends StatelessWidget {
                 obscure ? Icons.visibility : Icons.visibility_off,
                 color: colors.muted,
               ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PasswordStrength {
+  const _PasswordStrength({
+    required this.score,
+    required this.label,
+    required this.acceptable,
+  });
+
+  final int score;
+  final String label;
+  final bool acceptable;
+}
+
+_PasswordStrength _passwordStrength(String password) {
+  var score = 0;
+  if (password.length >= 8) score++;
+  if (RegExp(r'[A-Z]').hasMatch(password)) score++;
+  if (RegExp(r'[a-z]').hasMatch(password)) score++;
+  if (RegExp(r'[0-9]').hasMatch(password)) score++;
+  if (RegExp(r'[^A-Za-z0-9]').hasMatch(password)) score++;
+
+  final label = switch (score) {
+    0 || 1 => 'Weak',
+    2 || 3 => 'Better',
+    4 => 'Strong',
+    _ => 'Excellent',
+  };
+
+  return _PasswordStrength(
+    score: score,
+    label: label,
+    acceptable: score >= 5,
+  );
+}
+
+class _PasswordStrengthMeter extends StatelessWidget {
+  const _PasswordStrengthMeter({required this.strength});
+
+  final _PasswordStrength strength;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
+    final value = (strength.score / 5).clamp(0.0, 1.0);
+    final color = strength.acceptable ? colors.accent : colors.warmAccent;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 6,
+            color: color,
+            backgroundColor: colors.border,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Password ${strength.label.toLowerCase()} - use upper, lower, number, and symbol.',
+          style: TextStyle(
+            color: colors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SecurityInlineMessage extends StatelessWidget {
+  const _SecurityInlineMessage({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: colors.warmAccent),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: colors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -1534,6 +1703,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
+                _SecurityPanel(
+                  email: user.email,
+                  sessionExpiresAt: state.sessionExpiresAt,
+                  rememberedEmail: state.savedEmail.isNotEmpty,
+                ),
+                const SizedBox(height: 18),
                 TextField(
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
@@ -1722,6 +1897,121 @@ class _Stage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SecurityPanel extends StatelessWidget {
+  const _SecurityPanel({
+    required this.email,
+    required this.sessionExpiresAt,
+    required this.rememberedEmail,
+  });
+
+  final String email;
+  final DateTime? sessionExpiresAt;
+  final bool rememberedEmail;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.security, color: scheme.primary),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Security',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              Chip(
+                avatar: const Icon(Icons.verified_user, size: 16),
+                label: const Text('Protected'),
+                visualDensity: VisualDensity.compact,
+                side: BorderSide(color: scheme.primary.withValues(alpha: 0.42)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _SecurityStatusRow(
+            icon: Icons.alternate_email,
+            label: 'Account',
+            value: email,
+          ),
+          _SecurityStatusRow(
+            icon: Icons.timer,
+            label: 'Session',
+            value: sessionExpiresAt == null
+                ? 'Managed by Supabase'
+                : 'Refreshes until ${_shortDateTime(sessionExpiresAt!)}',
+          ),
+          _SecurityStatusRow(
+            icon: rememberedEmail ? Icons.mark_email_read : Icons.privacy_tip,
+            label: 'Remember email',
+            value: rememberedEmail ? 'Enabled on this device' : 'Off',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SecurityStatusRow extends StatelessWidget {
+  const _SecurityStatusRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 112,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _shortDateTime(DateTime value) {
+  final local = value.toLocal();
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '${local.month}/${local.day} $hour:$minute';
 }
 
 class _AppBarLine extends StatelessWidget {

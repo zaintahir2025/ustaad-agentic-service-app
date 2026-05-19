@@ -190,6 +190,12 @@ class UstaadRepository {
     return _userFromSupabase(user);
   }
 
+  DateTime? currentSessionExpiresAt() {
+    final expiresAt = _client.auth.currentSession?.expiresAt;
+    if (expiresAt == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
+  }
+
   Future<UstaadUser?> fetchProfile() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;

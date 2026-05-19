@@ -21,6 +21,7 @@ class UstaadState extends ChangeNotifier {
   bool reviewBusy = false;
   String savedEmail = '';
   String? bannerMessage;
+  DateTime? sessionExpiresAt;
   ThemeMode themeMode = ThemeMode.dark;
   UstaadScreen screen = UstaadScreen.gateway;
   UstaadUser? user;
@@ -47,6 +48,7 @@ class UstaadState extends ChangeNotifier {
         ? ThemeMode.dark
         : ThemeMode.light;
     user = _repository.currentUser();
+    sessionExpiresAt = _repository.currentSessionExpiresAt();
     if (user != null) {
       user = await _repository.fetchProfile() ?? user;
       screen = UstaadScreen.commandCenter;
@@ -73,6 +75,7 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
     try {
       user = await _repository.signIn(email: email, password: password);
+      sessionExpiresAt = _repository.currentSessionExpiresAt();
       await _rememberEmail(email, remember);
       await refreshBookings(silent: true);
       bannerMessage = 'Welcome back, ${user!.firstName}.';
@@ -109,6 +112,7 @@ class UstaadState extends ChangeNotifier {
         phone: phone,
         password: password,
       );
+      sessionExpiresAt = _repository.currentSessionExpiresAt();
       await _rememberEmail(email, remember);
       bookings = const [];
       bannerMessage = 'Account ready. Welcome, ${user!.firstName}.';
@@ -149,6 +153,7 @@ class UstaadState extends ChangeNotifier {
   Future<void> signOut() async {
     await _repository.signOut();
     user = null;
+    sessionExpiresAt = null;
     bookings = const [];
     latestBooking = null;
     providerReviews = const {};
