@@ -426,7 +426,7 @@ class UstaadState extends ChangeNotifier {
   }
 
   ServiceIntent _inferIntent(String problem, String location) {
-    final value = problem.toLowerCase();
+    final value = _normalizeSearchText(problem);
     var role = 'General';
     var description = 'General Maintenance';
 
@@ -437,6 +437,12 @@ class UstaadState extends ChangeNotifier {
       'wire',
       'wiring',
       'breaker',
+      '\u0628\u062c\u0644\u06cc',
+      '\u0628\u062a\u06cc',
+      '\u0644\u0627\u0626\u0679',
+      '\u0648\u0627\u0626\u0631',
+      '\u062a\u0627\u0631',
+      '\u0628\u0631\u06cc\u06a9\u0631',
       'بجلی',
       'وائر',
     ])) {
@@ -449,6 +455,11 @@ class UstaadState extends ChangeNotifier {
       'leak',
       'pipe',
       'drain',
+      '\u067e\u0627\u0646\u06cc',
+      '\u0644\u06cc\u06a9',
+      '\u0646\u0644',
+      '\u067e\u0627\u0626\u067e',
+      '\u06af\u0679\u0631',
       'پانی',
       'لیک',
       'نل',
@@ -460,6 +471,11 @@ class UstaadState extends ChangeNotifier {
       'cooling',
       'thanda',
       'compressor',
+      '\u0627\u06d2 \u0633\u06cc',
+      '\u0627\u06cc\u0631 \u06a9\u0646\u0688\u06cc\u0634\u0646\u0631',
+      '\u0679\u06be\u0646\u0688\u0627',
+      '\u06a9\u0648\u0644\u0646\u06af',
+      '\u06a9\u0645\u067e\u0631\u06cc\u0633\u0631',
       'اے سی',
       'ٹھنڈا',
     ])) {
@@ -470,6 +486,10 @@ class UstaadState extends ChangeNotifier {
       'safai',
       'dust',
       'deep clean',
+      '\u0635\u0641\u0627\u0626\u06cc',
+      '\u0635\u0627\u0641',
+      '\u06af\u0631\u062f',
+      '\u062f\u06be\u0648\u0644',
       'صفائی',
     ])) {
       role = 'Cleaning';
@@ -482,6 +502,11 @@ class UstaadState extends ChangeNotifier {
       'math',
       'study',
       'parhai',
+      '\u0627\u0633\u062a\u0627\u062f',
+      '\u0679\u06cc\u0686\u0631',
+      '\u067e\u0691\u06be\u0627\u0626\u06cc',
+      '\u067e\u0691\u06be\u0627\u0646\u0627',
+      '\u0631\u06cc\u0627\u0636\u06cc',
       'استاد',
       'پڑھائی',
     ])) {
@@ -493,6 +518,11 @@ class UstaadState extends ChangeNotifier {
       'salon',
       'bridal',
       'mehndi',
+      '\u0628\u06cc\u0648\u0679\u06cc',
+      '\u0645\u06cc\u06a9 \u0627\u067e',
+      '\u0633\u06cc\u0644\u0648\u0646',
+      '\u0645\u06c1\u0646\u062f\u06cc',
+      '\u062f\u0644\u06c1\u0646',
       'بیوٹی',
       'میک اپ',
     ])) {
@@ -506,6 +536,10 @@ class UstaadState extends ChangeNotifier {
       'emergency',
       'jaldi',
       'foran',
+      '\u0641\u0648\u0631\u0627\u064b',
+      '\u0641\u0648\u0631\u0627',
+      '\u062c\u0644\u062f\u06cc',
+      '\u0627\u06cc\u0645\u0631\u062c\u0646\u0633\u06cc',
       'فوراً',
       'جلدی',
     ])
@@ -635,6 +669,28 @@ class UstaadState extends ChangeNotifier {
   }
 
   String _inferTimeLabel(String value) {
+    if (_containsAny(value, [
+      'kal subah',
+      'tomorrow morning',
+      '\u06a9\u0644 \u0635\u0628\u062d',
+    ])) {
+      return 'Tomorrow morning';
+    }
+    if (_containsAny(value, ['kal', 'tomorrow', '\u06a9\u0644'])) {
+      return 'Tomorrow';
+    }
+    if (_containsAny(value, ['aaj', 'today', '\u0622\u062c'])) {
+      return 'Today';
+    }
+    if (_containsAny(value, [
+      'raat',
+      'tonight',
+      'evening',
+      '\u0631\u0627\u062a',
+      '\u0634\u0627\u0645',
+    ])) {
+      return 'Tonight';
+    }
     if (_containsAny(value, ['kal subah', 'tomorrow morning', 'کل صبح'])) {
       return 'Tomorrow morning';
     }
@@ -652,7 +708,7 @@ class UstaadState extends ChangeNotifier {
 
   String _inferLanguage(String value) {
     if (RegExp(r'[\u0600-\u06ff]').hasMatch(value)) return 'Urdu';
-    if (_containsAny(value.toLowerCase(), [
+    if (_containsAny(_normalizeSearchText(value), [
       'mujhe',
       'chahiye',
       'kal',
@@ -662,6 +718,12 @@ class UstaadState extends ChangeNotifier {
       'jaldi',
       'foran',
       'parhai',
+      'ustad',
+      'ustaad',
+      'safai',
+      'thanda',
+      'raat',
+      'aaj',
     ])) {
       return 'Roman Urdu';
     }
@@ -670,6 +732,18 @@ class UstaadState extends ChangeNotifier {
 
   bool _containsAny(String value, List<String> terms) {
     return terms.any(value.contains);
+  }
+
+  String _normalizeSearchText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('\u064a', '\u06cc')
+        .replaceAll('\u0649', '\u06cc')
+        .replaceAll('\u0643', '\u06a9')
+        .replaceAll('\u06c0', '\u06c1')
+        .replaceAll('\u200c', '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   Future<void> _rememberEmail(String email, bool remember) async {

@@ -83,4 +83,21 @@ void main() {
     expect(resetLinkRect.right, lessThanOrEqualTo(390));
     expect(tester.takeException(), isNull);
   });
+
+  test('Urdu requests infer the correct service intent', () {
+    final state = UstaadState(UstaadRepository(Supabase.instance.client));
+
+    state.startAnalysis('بجلی کا مسئلہ ہے', 'G-13, Islamabad');
+    expect(state.intent?.role, 'Electrician');
+    expect(state.intent?.language, 'Urdu');
+
+    state.startAnalysis('کچن میں پانی لیک ہو رہا ہے', 'G-13, Islamabad');
+    expect(state.intent?.role, 'Plumber');
+    expect(state.intent?.language, 'Urdu');
+
+    state.startAnalysis('کل صبح اے سی ٹھنڈا نہیں ہو رہا', 'G-13, Islamabad');
+    expect(state.intent?.role, 'AC Repair');
+    expect(state.intent?.timeLabel, 'Tomorrow morning');
+    expect(state.intent?.language, 'Urdu');
+  });
 }

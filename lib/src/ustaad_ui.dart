@@ -512,11 +512,14 @@ class _AuthBrandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final logoAsset = Theme.of(context).brightness == Brightness.light
+        ? 'assets/branding/ustaad_logo_light.png'
+        : 'assets/branding/ustaad_logo.png';
     return Semantics(
       label: 'USTAAD logo',
       image: true,
       child: Image.asset(
-        'assets/branding/ustaad_logo.png',
+        logoAsset,
         width: 248,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
