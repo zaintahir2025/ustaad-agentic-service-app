@@ -276,7 +276,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
                     color: colors.fieldFill,
                   ),
                 )
-              : Text(loginLocked ? _loginCooldownLabel : 'LOGIN'),
+              : Text(loginLocked ? _loginCooldownLabel : 'Sign in'),
         ),
         if (loginLocked) ...[
           const SizedBox(height: 10),
@@ -344,7 +344,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
                     color: colors.fieldFill,
                   ),
                 )
-              : const Text('JOIN US'),
+              : const Text('Create account'),
         ),
         const SizedBox(height: 14),
         _AuthRememberRow(
@@ -474,9 +474,9 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   String get _loginCooldownLabel {
     final until = _loginLockedUntil;
-    if (until == null) return 'TRY AGAIN';
+    if (until == null) return 'Try again';
     final seconds = until.difference(DateTime.now()).inSeconds.clamp(1, 60);
-    return 'TRY AGAIN IN ${seconds}s';
+    return 'Try again in ${seconds}s';
   }
 
   void _recordFailedLogin() {
@@ -634,14 +634,14 @@ class _AuthTabs extends StatelessWidget {
           children: [
             Expanded(
               child: _AuthTabButton(
-                label: 'LOGIN',
+                label: 'Sign in',
                 selected: !creatingAccount,
                 onTap: onLogin,
               ),
             ),
             Expanded(
               child: _AuthTabButton(
-                label: 'JOIN US',
+                label: 'Create',
                 selected: creatingAccount,
                 onTap: onJoin,
               ),
@@ -1045,6 +1045,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   bool _locating = false;
   bool _trackingLocation = false;
   String? _locationStatus;
+  String _providerQuery = '';
+  String _serviceFilter = 'All';
+  String _sortMode = 'Best match';
 
   @override
   void dispose() {
@@ -1067,11 +1070,19 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         children: [
           _AppBarLine(
             title: user == null ? 'Book' : 'Hi ${user.firstName}',
-            subtitle: state.backendOnline ? 'Live' : 'Demo',
+            subtitle: state.backendOnline ? 'Connected' : 'Offline ready',
             showNav: true,
           ),
           const SizedBox(height: 12),
-          _FeatureStrip(online: state.backendOnline),
+          _HomeDashboard(
+            bookings: state.bookings,
+            savedCount: state.savedProviderIds.length,
+            recentRequests: state.recentRequests,
+            onUseRecent: (request) {
+              _problem.text = request;
+              _analyze();
+            },
+          ),
           const SizedBox(height: 12),
           if (wide)
             Row(
@@ -1087,6 +1098,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             const SizedBox(height: 12),
             _quickServices(),
           ],
+          const SizedBox(height: 12),
+          _providerDirectory(state),
         ],
       ),
     );
@@ -1154,7 +1167,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             maxLines: 7,
             decoration: const InputDecoration(
               labelText: 'Request',
-              hintText: 'AC not cooling in G-13',
+              hintText: 'Describe what you need',
             ),
           ),
           const SizedBox(height: 8),
@@ -1184,7 +1197,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
           ElevatedButton.icon(
             onPressed: _analyze,
             icon: const Icon(Icons.search),
-            label: const Text('FIND'),
+            label: const Text('Find providers'),
           ),
         ],
       ),
@@ -1206,7 +1219,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Services',
+            'Quick book',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w900,
                 ),
@@ -1225,6 +1238,102 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
               );
             }).toList(),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _providerDirectory(UstaadState state) {
+    final roles = [
+      'All',
+      ...{for (final provider in state.providers) provider.role},
+    ];
+    final query = _providerQuery.trim().toLowerCase();
+    var visible = state.providers.where((provider) {
+      final matchesRole =
+          _serviceFilter == 'All' || provider.role == _serviceFilter;
+      final searchText =
+          '${provider.name} ${provider.role} ${provider.city}'.toLowerCase();
+      return matchesRole && (query.isEmpty || searchText.contains(query));
+    }).toList();
+
+    visible.sort((a, b) {
+      return switch (_sortMode) {
+        'Nearest' => a.distanceKm.compareTo(b.distanceKm),
+        'Price' => a.price.compareTo(b.price),
+        'Rating' => b.rating.compareTo(a.rating),
+        _ => b.reliability.compareTo(a.reliability),
+      };
+    });
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Provider directory',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Sort providers',
+                initialValue: _sortMode,
+                onSelected: (value) => setState(() => _sortMode = value),
+                itemBuilder: (context) {
+                  return const [
+                    PopupMenuItem(
+                        value: 'Best match', child: Text('Best match')),
+                    PopupMenuItem(value: 'Nearest', child: Text('Nearest')),
+                    PopupMenuItem(value: 'Rating', child: Text('Rating')),
+                    PopupMenuItem(value: 'Price', child: Text('Price')),
+                  ];
+                },
+                icon: const Icon(Icons.sort),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'Search providers',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onChanged: (value) => setState(() => _providerQuery = value),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: roles.map((role) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    selected: _serviceFilter == role,
+                    label: Text(role),
+                    onSelected: (_) => setState(() => _serviceFilter = role),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (visible.isEmpty)
+            const _InlineEmpty(
+              icon: Icons.search_off,
+              text: 'No providers match this search.',
+            )
+          else
+            ...visible.take(5).map((provider) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ProviderListTile(provider: provider),
+              );
+            }),
         ],
       ),
     );
@@ -1388,6 +1497,221 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       return 'Turn on location services to use tracking.';
     }
     return 'Could not read location. Check permission and try again.';
+  }
+}
+
+class _HomeDashboard extends StatelessWidget {
+  const _HomeDashboard({
+    required this.bookings,
+    required this.savedCount,
+    required this.recentRequests,
+    required this.onUseRecent,
+  });
+
+  final List<BookingRecord> bookings;
+  final int savedCount;
+  final List<String> recentRequests;
+  final ValueChanged<String> onUseRecent;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = bookings
+        .where((booking) =>
+            booking.status != 'completed' && booking.status != 'cancelled')
+        .length;
+    final completed =
+        bookings.where((booking) => booking.status == 'completed').length;
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryMetric(
+                  icon: Icons.timeline,
+                  label: 'Active',
+                  value: '$active',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SummaryMetric(
+                  icon: Icons.bookmark,
+                  label: 'Saved',
+                  value: '$savedCount',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SummaryMetric(
+                  icon: Icons.verified,
+                  label: 'Done',
+                  value: '$completed',
+                ),
+              ),
+            ],
+          ),
+          if (recentRequests.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: recentRequests.take(4).map((request) {
+                return ActionChip(
+                  avatar: const Icon(Icons.history, size: 16),
+                  label: Text(
+                    request,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: () => onUseRecent(request),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryMetric extends StatelessWidget {
+  const _SummaryMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: scheme.primary),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+          ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProviderListTile extends StatelessWidget {
+  const _ProviderListTile({required this.provider});
+
+  final UstaadProviderProfile provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<UstaadState>();
+    final saved = state.isSavedProvider(provider.id);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          _Avatar(url: provider.avatarUrl, size: 46),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  provider.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${provider.role} - ${provider.city}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${provider.rating} stars - ${provider.distanceKm} km - Rs. ${provider.price}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: saved ? 'Unsave provider' : 'Save provider',
+            onPressed: () =>
+                context.read<UstaadState>().toggleSavedProvider(provider.id),
+            icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
+          ),
+          IconButton.filledTonal(
+            tooltip: 'View match',
+            onPressed: () =>
+                context.read<UstaadState>().previewProvider(provider),
+            icon: const Icon(Icons.arrow_forward),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineEmpty extends StatelessWidget {
+  const _InlineEmpty({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+        ],
+      ),
+    );
   }
 }
 
@@ -1574,12 +1898,34 @@ class WorkflowScreen extends StatelessWidget {
   }
 }
 
-class BookingsScreen extends StatelessWidget {
+class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key});
+
+  @override
+  State<BookingsScreen> createState() => _BookingsScreenState();
+}
+
+class _BookingsScreenState extends State<BookingsScreen> {
+  String _filter = 'All';
+  String _query = '';
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<UstaadState>();
+    final filtered = state.bookings.where((booking) {
+      final matchesFilter = switch (_filter) {
+        'Active' =>
+          booking.status != 'completed' && booking.status != 'cancelled',
+        'Completed' => booking.status == 'completed',
+        'Issues' => booking.status == 'issue_reported',
+        _ => true,
+      };
+      final text =
+          '${booking.providerName} ${booking.serviceRole} ${booking.problemText}'
+              .toLowerCase();
+      return matchesFilter && text.contains(_query.trim().toLowerCase());
+    }).toList();
+
     return _Stage(
       wideMaxWidth: 960,
       child: Column(
@@ -1596,6 +1942,28 @@ class BookingsScreen extends StatelessWidget {
             showNav: true,
           ),
           const SizedBox(height: 16),
+          if (state.bookings.isNotEmpty) ...[
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Search bookings',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['All', 'Active', 'Completed', 'Issues'].map((label) {
+                return ChoiceChip(
+                  selected: _filter == label,
+                  label: Text(label),
+                  onSelected: (_) => setState(() => _filter = label),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (state.bookings.isEmpty)
             _EmptyState(
               icon: Icons.receipt_long,
@@ -1603,8 +1971,13 @@ class BookingsScreen extends StatelessWidget {
               actionLabel: 'Book a service',
               onAction: () => context.read<UstaadState>().openHome(),
             )
+          else if (filtered.isEmpty)
+            const _InlineEmpty(
+              icon: Icons.search_off,
+              text: 'No bookings match this filter.',
+            )
           else
-            ...state.bookings.map((booking) {
+            ...filtered.map((booking) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _BookingCard(booking: booking),
@@ -1712,6 +2085,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   rememberedEmail: state.savedEmail.isNotEmpty,
                 ),
                 const SizedBox(height: 18),
+                _SavedProvidersPanel(providers: state.savedProviders),
+                const SizedBox(height: 18),
                 TextField(
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
@@ -1797,7 +2172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ElevatedButton.icon(
                   onPressed: state.profileBusy ? null : _save,
                   icon: const Icon(Icons.save),
-                  label: const Text('SAVE PROFILE'),
+                  label: const Text('Save profile'),
                 ),
                 if (state.bannerMessage != null) ...[
                   const SizedBox(height: 10),
@@ -1968,6 +2343,41 @@ class _SecurityPanel extends StatelessWidget {
   }
 }
 
+class _SavedProvidersPanel extends StatelessWidget {
+  const _SavedProvidersPanel({required this.providers});
+
+  final List<UstaadProviderProfile> providers;
+
+  @override
+  Widget build(BuildContext context) {
+    if (providers.isEmpty) {
+      return const _InlineEmpty(
+        icon: Icons.bookmark_border,
+        text: 'Saved providers will appear here.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Saved providers',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ...providers.take(3).map((provider) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _ProviderListTile(provider: provider),
+          );
+        }),
+      ],
+    );
+  }
+}
+
 class _SecurityStatusRow extends StatelessWidget {
   const _SecurityStatusRow({
     required this.icon,
@@ -2131,34 +2541,6 @@ class _BottomNav extends StatelessWidget {
           label: 'Profile',
         ),
       ],
-    );
-  }
-}
-
-class _FeatureStrip extends StatelessWidget {
-  const _FeatureStrip({required this.online});
-
-  final bool online;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (Icons.translate, 'Urdu'),
-      (Icons.verified, 'Trust'),
-      (Icons.schedule, 'Status'),
-      (Icons.rate_review, 'Reviews'),
-      (online ? Icons.cloud_done : Icons.cloud_off, online ? 'Live' : 'Demo'),
-    ];
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: items.map((item) {
-        return Chip(
-          avatar: Icon(item.$1, size: 16),
-          label: Text(item.$2),
-          visualDensity: VisualDensity.compact,
-        );
-      }).toList(),
     );
   }
 }
@@ -2402,9 +2784,10 @@ class _ProviderCardState extends State<_ProviderCard> {
   @override
   Widget build(BuildContext context) {
     final provider = widget.provider;
+    final state = context.watch<UstaadState>();
+    final saved = state.isSavedProvider(provider.id);
     final score = (provider.score.clamp(0, 100)).toDouble() / 100;
-    final reviews =
-        context.watch<UstaadState>().providerReviews[provider.id] ?? const [];
+    final reviews = state.providerReviews[provider.id] ?? const [];
 
     return _Panel(
       child: Column(
@@ -2439,6 +2822,13 @@ class _ProviderCardState extends State<_ProviderCard> {
                     Text('${provider.rating} ★ • Rs. ${provider.price}'),
                   ],
                 ),
+              ),
+              IconButton(
+                tooltip: saved ? 'Unsave provider' : 'Save provider',
+                onPressed: () => context
+                    .read<UstaadState>()
+                    .toggleSavedProvider(provider.id),
+                icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
               ),
             ],
           ),
@@ -2556,6 +2946,18 @@ class _BookingCard extends StatelessWidget {
                 icon: const Icon(Icons.cancel),
                 label: const Text('Cancel'),
               ),
+              OutlinedButton.icon(
+                onPressed: booking.status == 'issue_reported'
+                    ? null
+                    : () => _showIssueDialog(context, booking),
+                icon: const Icon(Icons.report_problem),
+                label: const Text('Issue'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _rebook(context, booking),
+                icon: const Icon(Icons.replay),
+                label: const Text('Rebook'),
+              ),
               FilledButton.icon(
                 onPressed: () => _showReviewDialog(
                   context,
@@ -2571,6 +2973,29 @@ class _BookingCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _rebook(BuildContext context, BookingRecord booking) {
+    final state = context.read<UstaadState>();
+    final provider = state.providers.firstWhere(
+      (item) => item.id == booking.providerId,
+      orElse: () => UstaadProviderProfile(
+        id: booking.providerId,
+        name: booking.providerName,
+        role: booking.serviceRole,
+        reliability: 0.86,
+        distanceKm: 5,
+        rating: booking.providerRating == 0 ? 4.6 : booking.providerRating,
+        price: booking.quoteTotal,
+        avatarUrl: booking.providerAvatarUrl,
+        verified: true,
+        city: booking.location,
+        phone: booking.providerPhone,
+        whatsapp: booking.providerWhatsapp,
+        availabilitySlots: [booking.slotLabel],
+      ),
+    );
+    state.previewProvider(provider);
   }
 }
 
@@ -2789,6 +3214,7 @@ class _StatusChip extends StatelessWidget {
     final color = switch (status) {
       'completed' => Colors.green,
       'cancelled' => Colors.redAccent,
+      'issue_reported' => Colors.amber,
       'en_route' => scheme.primary,
       _ => scheme.secondary,
     };
@@ -2879,6 +3305,53 @@ class _AvatarFallback extends StatelessWidget {
       child: const Icon(Icons.person),
     );
   }
+}
+
+Future<void> _showIssueDialog(
+  BuildContext context,
+  BookingRecord booking,
+) async {
+  final note = TextEditingController();
+  final result = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text('Report ${booking.providerName}'),
+        content: TextField(
+          controller: note,
+          minLines: 3,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Issue details',
+            hintText: 'Late arrival, pricing concern, or service problem',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, note.text),
+            child: const Text('Submit'),
+          ),
+        ],
+      );
+    },
+  );
+  note.dispose();
+  if (result == null || !context.mounted) return;
+  final state = context.read<UstaadState>();
+  final ok = await state.reportBookingIssue(booking, result);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        state.bannerMessage ??
+            (ok ? 'Issue reported.' : 'Issue could not be reported.'),
+      ),
+    ),
+  );
 }
 
 Future<void> _showReviewDialog(

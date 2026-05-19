@@ -1,34 +1,26 @@
 # Ustaad Flutter
 
-Ustaad is a professional service-booking app for Pakistan's informal economy. It supports English, Urdu, and Roman Urdu requests, ranks trusted nearby providers, manages bookings, profiles, provider contacts, reviews, and Supabase-backed workflow traces.
+Ustaad is a production-minded service-booking app for Pakistan's informal economy. It supports English, Urdu, and Roman Urdu requests, ranks nearby providers, manages bookings, saved professionals, profile details, provider contacts, reviews, and Supabase-backed workflow traces.
 
-## Core Flow
+## Product Flow
 
-1. User signs in with Supabase Auth.
-2. User describes a service request, for example `Mujhe kal subah G-13 mein AC technician chahiye`.
-3. The app extracts service, location, time, language, urgency, and confidence.
-4. Providers are loaded from Supabase `service_providers`, with local seed fallback for demos.
-5. Ranking uses distance, availability, rating, reliability, completed jobs, urgency, and price.
-6. Booking writes to Supabase `bookings`, unlocks provider contact details, and trace steps write to `agent_events`.
-7. Users can track booking status, complete/cancel bookings, and review providers.
-8. Users can edit profile details, preferred language, and upload profile photos through Supabase Storage.
+1. Customers sign in with Supabase Auth.
+2. Customers describe a service need in natural language.
+3. The app extracts service type, location, time, language, urgency, and confidence.
+4. Providers load from Supabase, with an offline catalog fallback.
+5. Ranking weighs distance, availability, rating, reliability, completed jobs, urgency, and price.
+6. Booking writes to Supabase, unlocks provider contact details, and stores trace events.
+7. Customers can search bookings, rebook, cancel, complete, report an issue, and review providers.
+8. Customers can save trusted providers and manage their profile, language, address, and avatar.
 
 ## Architecture
 
 - `lib/main.dart`: Supabase initialization and Provider root.
-- `lib/src/ustaad_state.dart`: orchestration state, multilingual parser, ranking logic, profiles, bookings, reviews.
-- `lib/src/ustaad_repository.dart`: Supabase Auth, Storage avatars, provider reads, booking writes, review writes, agent event writes.
-- `lib/src/ustaad_ui.dart`: responsive Flutter UI for mobile, tablet, and web.
-- `android/`, `ios/`, `web/`: platform runners.
+- `lib/src/ustaad_state.dart`: orchestration state, parser, ranking, profiles, bookings, saved providers, reviews.
+- `lib/src/ustaad_repository.dart`: Supabase Auth, Storage avatars, provider reads, booking writes, review writes, event writes.
+- `lib/src/ustaad_ui.dart`: responsive Flutter UI for mobile, tablet, desktop, and web.
+- `android/`, `ios/`, `web/`: Flutter platform runners.
 - `supabase/migrations/`: SQL schema, RLS policies, Storage bucket, seed providers, booking/event/review tables.
-
-## Antigravity Use
-
-The app models the required Antigravity-style orchestration as a traceable pipeline:
-
-`Interpreter Agent -> Discovery Agent -> Ranking Agent -> Booking Agent -> Follow-up Agent`
-
-For the hackathon demo, each step is visible in the app and persisted to `agent_events`. If Google Antigravity runtime/API access is available, replace the parser/ranking methods in `UstaadState` with Antigravity tool calls while keeping the same UI and Supabase persistence contracts.
 
 ## Supabase
 
@@ -46,24 +38,7 @@ supabase link --project-ref dcsioxiiyazchampqulz
 supabase db push
 ```
 
-If using the direct connection flow, pass the real database password at the prompt or with `--password`. Do not commit that password.
-
-Tables:
-
-- `profiles`
-- `service_providers`
-- `bookings`
-- `agent_events`
-- `reviews`
-- Storage bucket: `avatars`
-
-All public tables have RLS enabled. Client code only uses the publishable key.
-
-Current remote migration check:
-
-- 8 service providers seeded.
-- 3 public reviews seeded.
-- `avatars` bucket created.
+Do not commit database passwords or private service keys. Client code uses only the publishable key.
 
 ## Run
 
@@ -72,19 +47,17 @@ flutter pub get
 flutter run -d chrome
 ```
 
-GitHub Pages builds the web app with this base path:
+Build web:
 
 ```sh
 flutter build web --release --base-href "/ustaad-agentic-service-app/"
 ```
 
-Android:
+Build Android:
 
 ```sh
 flutter build apk --debug
 ```
-
-GitHub Actions also runs web, Android, and iOS debug verification on every push to `main`.
 
 ## Verify
 
@@ -94,7 +67,3 @@ flutter test
 flutter build web
 flutter build apk --debug
 ```
-
-## Demo Notes
-
-Show one full request from input to confirmed booking. Then open bookings, copy contact details, mark the booking complete, post a review, and update the user profile photo/details. Open the workflow trace on the provider match screen to demonstrate reasoning, tool usage, action execution, and follow-up automation.

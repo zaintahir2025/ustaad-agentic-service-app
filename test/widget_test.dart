@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:ustaad_flutter/main.dart';
+import 'package:ustaad_flutter/src/models.dart';
 import 'package:ustaad_flutter/src/ustaad_repository.dart';
 import 'package:ustaad_flutter/src/ustaad_state.dart';
 
@@ -30,8 +31,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.bySemanticsLabel('USTAAD logo'), findsOneWidget);
-    expect(find.text('LOGIN'), findsWidgets);
-    expect(find.text('JOIN US'), findsOneWidget);
+    expect(find.text('Sign in'), findsWidgets);
+    expect(find.text('Create'), findsOneWidget);
     expect(find.text('Enter Email Address'), findsOneWidget);
     expect(find.text('Keep me logged in'), findsOneWidget);
     expect(find.byTooltip('Switch theme'), findsOneWidget);
@@ -48,7 +49,7 @@ void main() {
     );
     expect(find.byIcon(Icons.wb_sunny_outlined), findsOneWidget);
 
-    await tester.tap(find.text('JOIN US'));
+    await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
 
     expect(find.text('Enter Full Name'), findsOneWidget);
@@ -75,12 +76,89 @@ void main() {
     await tester.pumpAndSettle();
 
     final loginButtonRect =
-        tester.getRect(find.widgetWithText(FilledButton, 'LOGIN'));
+        tester.getRect(find.widgetWithText(FilledButton, 'Sign in'));
     final resetLinkRect = tester.getRect(find.text('Forgot Password?'));
 
     expect(loginButtonRect.left, greaterThanOrEqualTo(0));
     expect(loginButtonRect.right, lessThanOrEqualTo(390));
     expect(resetLinkRect.right, lessThanOrEqualTo(390));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('signed-in home scales across app surfaces', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final state = UstaadState(UstaadRepository(Supabase.instance.client))
+      ..bootstrapped = true
+      ..backendOnline = true
+      ..screen = UstaadScreen.commandCenter
+      ..user = const UstaadUser(
+        id: 'test-user',
+        name: 'Test Customer',
+        email: 'customer@example.com',
+      );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const UstaadApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hi Test'), findsOneWidget);
+    expect(find.text('Quick book'), findsOneWidget);
+    expect(find.text('Provider directory'), findsOneWidget);
+    expect(find.text('Find providers'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('provider matching and booking filters render cleanly',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final state = UstaadState(UstaadRepository(Supabase.instance.client))
+      ..bootstrapped = true
+      ..screen = UstaadScreen.commandCenter
+      ..user = const UstaadUser(
+        id: 'test-user',
+        name: 'Test Customer',
+        email: 'customer@example.com',
+      );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: state,
+        child: const UstaadApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Request'),
+      'Urgent pani leak in kitchen',
+    );
+    await tester.tap(find.text('Find providers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Matches'), findsOneWidget);
+    expect(find.textContaining('Plumber'), findsWidgets);
+
+    state.openBookings();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bookings'), findsWidgets);
+    expect(find.text('No bookings yet'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

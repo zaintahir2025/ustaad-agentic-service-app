@@ -29,6 +29,8 @@ class UstaadState extends ChangeNotifier {
   List<UstaadProviderProfile> providers = UstaadRepository.seedProviders;
   List<UstaadProviderProfile> rankedProviders = const [];
   List<BookingRecord> bookings = const [];
+  List<String> savedProviderIds = const [];
+  List<String> recentRequests = const [];
   Map<String, List<ReviewRecord>> providerReviews = const {};
   UstaadProviderProfile? selectedProvider;
   BookingRecord? latestBooking;
@@ -40,6 +42,10 @@ class UstaadState extends ChangeNotifier {
 
   bool get isSignedIn => user != null;
   bool get isDark => themeMode == ThemeMode.dark;
+  List<UstaadProviderProfile> get savedProviders {
+    final saved = savedProviderIds.toSet();
+    return providers.where((provider) => saved.contains(provider.id)).toList();
+  }
 
   Future<void> bootstrap() async {
     final prefs = await SharedPreferences.getInstance();
@@ -47,6 +53,9 @@ class UstaadState extends ChangeNotifier {
     themeMode = (prefs.getBool('ustaad_dark_theme') ?? true)
         ? ThemeMode.dark
         : ThemeMode.light;
+    savedProviderIds =
+        prefs.getStringList('ustaad_saved_providers') ?? const [];
+    recentRequests = prefs.getStringList('ustaad_recent_requests') ?? const [];
     user = _repository.currentUser();
     sessionExpiresAt = _repository.currentSessionExpiresAt();
     if (user != null) {
@@ -64,6 +73,24 @@ class UstaadState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('ustaad_dark_theme', themeMode == ThemeMode.dark);
     notifyListeners();
+  }
+
+  Future<void> toggleSavedProvider(String providerId) async {
+    final next = savedProviderIds.toSet();
+    if (!next.add(providerId)) {
+      next.remove(providerId);
+      bannerMessage = 'Provider removed from saved.';
+    } else {
+      bannerMessage = 'Provider saved.';
+    }
+    savedProviderIds = next.toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('ustaad_saved_providers', savedProviderIds);
+    notifyListeners();
+  }
+
+  bool isSavedProvider(String providerId) {
+    return savedProviderIds.contains(providerId);
   }
 
   Future<bool> signIn({
@@ -172,8 +199,7 @@ class UstaadState extends ChangeNotifier {
     } catch (_) {
       providers = UstaadRepository.seedProviders;
       backendOnline = false;
-      bannerMessage =
-          'Local demo data is active until Supabase SQL is applied.';
+      bannerMessage = 'Offline provider catalog is active.';
     }
     if (!silent) notifyListeners();
   }
@@ -293,6 +319,34 @@ class UstaadState extends ChangeNotifier {
     quote = _quoteFor(firstProvider, nextIntent);
     workflowEvents = _buildWorkflowEvents(nextIntent, ranked);
     screen = UstaadScreen.selection;
+    _rememberRequest(lastProblem);
+    notifyListeners();
+  }
+
+  void previewProvider(UstaadProviderProfile provider) {
+    final nextIntent = ServiceIntent(
+      role: provider.role,
+      description: '${provider.role} service',
+      urgency: 'Normal',
+      location: lastLocation,
+      timeLabel: provider.nextSlot,
+      language: user?.preferredLanguage ?? 'English',
+      confidence: 0.88,
+    );
+    final ranked = _rankProviders(nextIntent);
+    final focused = ranked.firstWhere(
+      (item) => item.id == provider.id,
+      orElse: () => provider.withScore(82, provider.reason),
+    );
+    intent = nextIntent;
+    rankedProviders = [
+      focused,
+      ...ranked.where((item) => item.id != provider.id),
+    ];
+    selectedProvider = focused;
+    quote = _quoteFor(focused, nextIntent);
+    workflowEvents = _buildWorkflowEvents(nextIntent, rankedProviders);
+    screen = UstaadScreen.selection;
     notifyListeners();
   }
 
@@ -327,7 +381,7 @@ class UstaadState extends ChangeNotifier {
         problemText: lastProblem,
       );
       bookings = [latestBooking!, ...bookings];
-      bannerMessage = 'Booking is active locally; Supabase write is pending.';
+      bannerMessage = 'Booking is active locally and will sync when available.';
     }
     bookingBusy = false;
     notifyListeners();
@@ -367,6 +421,17 @@ class UstaadState extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<bool> reportBookingIssue(BookingRecord booking, String note) async {
+    final ok = await updateBookingStatus(booking, 'issue_reported');
+    if (ok) {
+      bannerMessage = note.trim().isEmpty
+          ? 'Issue reported. Support will follow up.'
+          : 'Issue reported: ${note.trim()}';
+      notifyListeners();
+    }
+    return ok;
   }
 
   Future<void> loadReviews(String providerId) async {
@@ -755,5 +820,18 @@ class UstaadState extends ChangeNotifier {
       savedEmail = '';
       await prefs.remove('ustaad_user_email');
     }
+  }
+
+  Future<void> _rememberRequest(String problem) async {
+    final trimmed = problem.trim();
+    if (trimmed.isEmpty) return;
+    final next = [
+      trimmed,
+      ...recentRequests
+          .where((item) => item.toLowerCase() != trimmed.toLowerCase()),
+    ].take(6).toList();
+    recentRequests = next;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('ustaad_recent_requests', next);
   }
 }

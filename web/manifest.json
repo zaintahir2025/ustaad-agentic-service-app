@@ -1,11 +1,11 @@
 {
-    "name": "Ustaad Orchestrator",
+    "name": "Ustaad",
     "short_name": "Ustaad",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#101010",
     "theme_color": "#101010",
-    "description": "Smart local service bookings.",
+    "description": "Book trusted local services.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
