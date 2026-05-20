@@ -55,6 +55,7 @@ class UstaadState extends ChangeNotifier {
   bool showMapView = false;
   bool locationSearchBusy = false;
   List<LocationSuggestion> locationSuggestions = const [];
+  LocationSuggestion? activeLocation;
 
   bool get isSignedIn => user != null;
   bool get isDark => themeMode == ThemeMode.dark;
@@ -200,12 +201,60 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<LocationSuggestion> resolveCurrentAddress({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final location = await _repository.reverseGeocode(
+      latitude: latitude,
+      longitude: longitude,
+    );
+    setActiveLocation(location);
+    return location;
+  }
+
+  void setActiveLocation(LocationSuggestion location) {
+    activeLocation = location;
+    lastLocation = location.locationText;
+    providers = providers.map((provider) {
+      final lat = provider.latitude;
+      final lng = provider.longitude;
+      if (lat == null || lng == null) return provider;
+      final km = geoDistanceKm(
+        location.latitude,
+        location.longitude,
+        lat,
+        lng,
+      ).round().clamp(1, 999);
+      return provider.withDistanceKm(km);
+    }).toList()
+      ..sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+
+    if (intent != null && rankedProviders.isNotEmpty) {
+      final updatedIntent = ServiceIntent(
+        role: intent!.role,
+        description: intent!.description,
+        urgency: intent!.urgency,
+        location: location.locationText,
+        timeLabel: intent!.timeLabel,
+        language: intent!.language,
+        confidence: intent!.confidence,
+      );
+      intent = updatedIntent;
+      rankedProviders = _rankProviders(updatedIntent);
+      selectedProvider = rankedProviders.first;
+      quote = _quoteFor(selectedProvider!, updatedIntent);
+      workflowEvents = _buildWorkflowEvents(updatedIntent, rankedProviders);
+    }
+    notifyListeners();
+  }
+
   Future<RouteEstimate> estimateRouteToProvider(
     UstaadProviderProfile provider,
   ) {
     return _repository.estimateRoute(
-      fromLat: 33.6938,
-      fromLng: 73.0652,
+      fromLat: activeLocation?.latitude ?? 33.6938,
+      fromLng: activeLocation?.longitude ?? 73.0652,
       toLat: provider.latitude ?? 33.6938,
       toLng: provider.longitude ?? 73.0652,
     );

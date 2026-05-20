@@ -456,6 +456,43 @@ class UstaadRepository {
     }
   }
 
+  Future<LocationSuggestion> reverseGeocode({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+      'lat': latitude.toStringAsFixed(7),
+      'lon': longitude.toStringAsFixed(7),
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'zoom': '18',
+    });
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'Ustaad/1.0 (com.ustaad.service)',
+        },
+      ).timeout(_networkTimeout);
+      if (response.statusCode != 200) {
+        return _fallbackReverseLocation(latitude, longitude);
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) {
+        return _fallbackReverseLocation(latitude, longitude);
+      }
+      final suggestion = LocationSuggestion.fromNominatim(
+        Map<String, dynamic>.from(decoded),
+      );
+      return suggestion.label.trim().isEmpty
+          ? _fallbackReverseLocation(latitude, longitude)
+          : suggestion;
+    } catch (_) {
+      return _fallbackReverseLocation(latitude, longitude);
+    }
+  }
+
   Future<RouteEstimate> estimateRoute({
     required double fromLat,
     required double fromLng,
@@ -693,6 +730,91 @@ class UstaadRepository {
     } catch (_) {
       return seedReviews[providerId] ?? const [];
     }
+  }
+
+  LocationSuggestion _fallbackReverseLocation(
+    double latitude,
+    double longitude,
+  ) {
+    final nearest = _nearestKnownLocation(latitude, longitude);
+    if (nearest != null) {
+      return LocationSuggestion(
+        label: 'Near ${nearest.label}',
+        subtitle: nearest.subtitle,
+        latitude: latitude,
+        longitude: longitude,
+      );
+    }
+    return LocationSuggestion(
+      label: 'Current location',
+      subtitle:
+          '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
+      latitude: latitude,
+      longitude: longitude,
+    );
+  }
+
+  LocationSuggestion? _nearestKnownLocation(double latitude, double longitude) {
+    const locations = [
+      LocationSuggestion(
+        label: 'G-13, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.6938,
+        longitude: 73.0652,
+      ),
+      LocationSuggestion(
+        label: 'F-8, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.7215,
+        longitude: 73.0433,
+      ),
+      LocationSuggestion(
+        label: 'I-8, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.6835,
+        longitude: 73.0477,
+      ),
+      LocationSuggestion(
+        label: 'DHA, Lahore',
+        subtitle: 'Lahore, Punjab',
+        latitude: 31.4697,
+        longitude: 74.4122,
+      ),
+      LocationSuggestion(
+        label: 'Johar Town, Lahore',
+        subtitle: 'Lahore, Punjab',
+        latitude: 31.4694,
+        longitude: 74.2728,
+      ),
+      LocationSuggestion(
+        label: 'Model Town, Lahore',
+        subtitle: 'Lahore, Punjab',
+        latitude: 31.4833,
+        longitude: 74.3239,
+      ),
+      LocationSuggestion(
+        label: 'Blue Area, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.7136,
+        longitude: 73.0605,
+      ),
+    ];
+
+    LocationSuggestion? best;
+    var bestDistance = double.infinity;
+    for (final location in locations) {
+      final distance = geoDistanceKm(
+        latitude,
+        longitude,
+        location.latitude,
+        location.longitude,
+      );
+      if (distance < bestDistance) {
+        best = location;
+        bestDistance = distance;
+      }
+    }
+    return bestDistance <= 25 ? best : null;
   }
 
   List<LocationSuggestion> _fallbackLocations(String query) {

@@ -160,6 +160,30 @@ class UstaadProviderProfile {
     );
   }
 
+  UstaadProviderProfile withDistanceKm(int value) {
+    return UstaadProviderProfile(
+      id: id,
+      name: name,
+      role: role,
+      reliability: reliability,
+      distanceKm: value,
+      rating: rating,
+      price: price,
+      avatarUrl: avatarUrl,
+      verified: verified,
+      city: city,
+      phone: phone,
+      whatsapp: whatsapp,
+      responseTimeMinutes: responseTimeMinutes,
+      availabilitySlots: availabilitySlots,
+      jobsCompleted: jobsCompleted,
+      score: score,
+      reason: reason,
+      latitude: latitude,
+      longitude: longitude,
+    );
+  }
+
   factory UstaadProviderProfile.fromMap(Map<String, dynamic> map) {
     return UstaadProviderProfile(
       id: '${map['id']}',
@@ -682,10 +706,11 @@ class LocationSuggestion {
   final double longitude;
 
   String get locationText {
-    final lat = latitude.toStringAsFixed(5);
-    final lng = longitude.toStringAsFixed(5);
-    return '$label ($lat, $lng)';
+    return label;
   }
+
+  String get coordinateText =>
+      '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
 
   factory LocationSuggestion.fromNominatim(Map<String, dynamic> map) {
     final display = '${map['display_name'] ?? 'Islamabad'}';
@@ -739,7 +764,7 @@ class RouteEstimate {
   }
 }
 
-double _haversineKm(
+double geoDistanceKm(
   double fromLat,
   double fromLng,
   double toLat,
@@ -754,6 +779,15 @@ double _haversineKm(
           math.sin(dLng / 2) *
           math.sin(dLng / 2);
   return earthKm * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+}
+
+double _haversineKm(
+  double fromLat,
+  double fromLng,
+  double toLat,
+  double toLng,
+) {
+  return geoDistanceKm(fromLat, fromLng, toLat, toLng);
 }
 
 double _degreesToRadians(double value) {

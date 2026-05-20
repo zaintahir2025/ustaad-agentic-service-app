@@ -1227,6 +1227,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   bool _locating = false;
   bool _trackingLocation = false;
   String? _locationStatus;
+  int _locationResolveVersion = 0;
   String _providerQuery = '';
   String _serviceFilter = 'All';
   String _sortMode = 'Best match';
@@ -1633,6 +1634,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     query.dispose();
 
     if (selected == null || !mounted) return;
+    context.read<UstaadState>().setActiveLocation(selected);
     setState(() {
       _location.text = selected.locationText;
       _locationStatus = 'Location selected with OpenStreetMap search.';
@@ -1675,7 +1677,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: currentSettings,
       );
-      _applyPosition(position, tracking: false);
+      await _applyPosition(position, tracking: false);
 
       await _locationSubscription?.cancel();
       _locationSubscription = Geolocator.getPositionStream(
@@ -1695,7 +1697,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       setState(() {
         _locating = false;
         _trackingLocation = true;
-        _locationStatus = 'Tracking live location. Accuracy: '
+        _locationStatus = 'Tracking this address. Accuracy: '
             '${position.accuracy.toStringAsFixed(0)} m.';
       });
     } on Object catch (error) {
@@ -1756,23 +1758,33 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     return true;
   }
 
-  void _applyPosition(Position position, {required bool tracking}) {
+  Future<void> _applyPosition(Position position,
+      {required bool tracking}) async {
     if (!mounted) return;
-    final label = _formatPosition(position);
+    final version = ++_locationResolveVersion;
+    final state = context.read<UstaadState>();
     setState(() {
-      _location.text = label;
+      _locationStatus = tracking
+          ? 'Resolving live address... Accuracy: '
+              '${position.accuracy.toStringAsFixed(0)} m.'
+          : 'Resolving your address... Accuracy: '
+              '${position.accuracy.toStringAsFixed(0)} m.';
+    });
+
+    final resolved = await state.resolveCurrentAddress(
+      latitude: position.latitude,
+      longitude: position.longitude,
+    );
+    if (!mounted || version != _locationResolveVersion) return;
+
+    setState(() {
+      _location.text = resolved.locationText;
       _locationStatus = tracking
           ? 'Live location updated. Accuracy: '
               '${position.accuracy.toStringAsFixed(0)} m.'
           : 'Current location found. Accuracy: '
               '${position.accuracy.toStringAsFixed(0)} m.';
     });
-  }
-
-  String _formatPosition(Position position) {
-    final lat = position.latitude.toStringAsFixed(5);
-    final lng = position.longitude.toStringAsFixed(5);
-    return 'Current location: $lat, $lng';
   }
 
   String _locationErrorMessage(Object error) {
