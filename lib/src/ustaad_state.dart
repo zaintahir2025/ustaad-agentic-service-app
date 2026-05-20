@@ -384,6 +384,29 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _activateLocalSignup({
+    required String name,
+    required String email,
+    required String phone,
+    required bool remember,
+    String? message,
+  }) async {
+    user = UstaadUser(
+      id: 'local-${email.trim().toLowerCase().hashCode.abs()}',
+      name: name.trim().isEmpty ? email.split('@').first : name.trim(),
+      email: email.trim(),
+      phone: phone.trim().isEmpty ? '+923001234567' : phone.trim(),
+    );
+    pendingConfirmationEmail = email;
+    passwordRecoveryActive = false;
+    sessionExpiresAt = null;
+    bookings = const [];
+    await _rememberEmail(email, remember);
+    bannerMessage = message ??
+        'Account created locally. Confirm email later to sync with Supabase.';
+    screen = UstaadScreen.commandCenter;
+  }
+
   Future<bool> join({
     required String name,
     required String email,
@@ -392,11 +415,16 @@ class UstaadState extends ChangeNotifier {
     required bool remember,
   }) async {
     if (authEmailCoolingDown) {
-      pendingConfirmationEmail = email;
-      bannerMessage =
-          'Supabase email is cooling down. Try again in ${authEmailCooldownSeconds}s or continue as guest.';
+      await _activateLocalSignup(
+        name: name,
+        email: email,
+        phone: phone,
+        remember: remember,
+        message:
+            'Account created locally. Supabase email is cooling down, so sync can happen after confirmation.',
+      );
       notifyListeners();
-      return false;
+      return true;
     }
 
     authBusy = true;
@@ -413,9 +441,14 @@ class UstaadState extends ChangeNotifier {
       await _rememberEmail(email, remember);
       bookings = const [];
       if (result.emailConfirmationRequired) {
-        pendingConfirmationEmail = email;
-        bannerMessage = 'Check your email to confirm your Ustaad account.';
-        screen = UstaadScreen.gateway;
+        await _activateLocalSignup(
+          name: name,
+          email: email,
+          phone: phone,
+          remember: remember,
+          message:
+              'Account created. Check your email later to confirm and enable cloud sync.',
+        );
       } else {
         pendingConfirmationEmail = null;
         bannerMessage = 'Account ready. Welcome, ${user!.firstName}.';
@@ -426,14 +459,34 @@ class UstaadState extends ChangeNotifier {
       return true;
     } on AuthException catch (error) {
       _handleAuthEmailError(error, email);
+      if (authEmailCoolingDown) {
+        await _activateLocalSignup(
+          name: name,
+          email: email,
+          phone: phone,
+          remember: remember,
+          message:
+              'Account created locally. Supabase email limit is active, so cloud sync can wait.',
+        );
+        authBusy = false;
+        notifyListeners();
+        return true;
+      }
       authBusy = false;
       notifyListeners();
       return false;
     } catch (_) {
-      bannerMessage = 'Could not create the Supabase account yet.';
+      await _activateLocalSignup(
+        name: name,
+        email: email,
+        phone: phone,
+        remember: remember,
+        message:
+            'Account created locally. Cloud signup will be available when Supabase is reachable.',
+      );
       authBusy = false;
       notifyListeners();
-      return false;
+      return true;
     }
   }
 

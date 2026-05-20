@@ -327,8 +327,6 @@ class _GatewayScreenState extends State<GatewayScreen> {
   Widget _joinForm() {
     final busy = context.watch<UstaadState>().authBusy;
     final coolingDown = context.watch<UstaadState>().authEmailCoolingDown;
-    final cooldownSeconds =
-        context.watch<UstaadState>().authEmailCooldownSeconds;
     final colors = _AuthPalette.of(context);
     final strength = _passwordStrength(_joinPassword.text);
     return Column(
@@ -368,7 +366,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
         _PasswordStrengthMeter(strength: strength),
         const SizedBox(height: 18),
         _AuthButton(
-          onPressed: busy || coolingDown ? null : _submitJoin,
+          onPressed: busy ? null : _submitJoin,
           child: busy
               ? SizedBox.square(
                   dimension: 18,
@@ -378,9 +376,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
                   ),
                 )
               : Text(
-                  coolingDown
-                      ? 'Try again in ${cooldownSeconds}s'
-                      : 'Create account',
+                  coolingDown ? 'Create local account' : 'Create account',
                 ),
         ),
         if (coolingDown) ...[
