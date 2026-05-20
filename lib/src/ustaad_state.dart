@@ -27,6 +27,7 @@ class UstaadState extends ChangeNotifier {
   String? bannerMessage;
   String? pendingConfirmationEmail;
   bool passwordRecoveryActive = false;
+  DateTime? authEmailCooldownUntil;
   DateTime? sessionExpiresAt;
   ThemeMode themeMode = ThemeMode.dark;
   UstaadScreen screen = UstaadScreen.gateway;
@@ -59,6 +60,17 @@ class UstaadState extends ChangeNotifier {
 
   bool get isSignedIn => user != null;
   bool get isDark => themeMode == ThemeMode.dark;
+  bool get authEmailCoolingDown {
+    final until = authEmailCooldownUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  int get authEmailCooldownSeconds {
+    final until = authEmailCooldownUntil;
+    if (until == null) return 0;
+    return until.difference(DateTime.now()).inSeconds.clamp(0, 3600);
+  }
+
   List<UstaadProviderProfile> get savedProviders {
     final saved = savedProviderIds.toSet();
     return providers.where((provider) => saved.contains(provider.id)).toList();
@@ -353,6 +365,25 @@ class UstaadState extends ChangeNotifier {
     }
   }
 
+  Future<void> continueAsGuest({
+    required String name,
+    String email = 'guest@ustaad.local',
+    String phone = '+923001234567',
+  }) async {
+    user = UstaadUser(
+      id: 'guest-${DateTime.now().millisecondsSinceEpoch}',
+      name: name.trim().isEmpty ? 'Guest Customer' : name.trim(),
+      email: email.trim().isEmpty ? 'guest@ustaad.local' : email.trim(),
+      phone: phone.trim().isEmpty ? '+923001234567' : phone.trim(),
+    );
+    pendingConfirmationEmail = null;
+    passwordRecoveryActive = false;
+    bookings = const [];
+    bannerMessage = 'Guest mode active. Bookings stay on this device.';
+    screen = UstaadScreen.commandCenter;
+    notifyListeners();
+  }
+
   Future<bool> join({
     required String name,
     required String email,
@@ -360,6 +391,14 @@ class UstaadState extends ChangeNotifier {
     required String password,
     required bool remember,
   }) async {
+    if (authEmailCoolingDown) {
+      pendingConfirmationEmail = email;
+      bannerMessage =
+          'Supabase email is cooling down. Try again in ${authEmailCooldownSeconds}s or continue as guest.';
+      notifyListeners();
+      return false;
+    }
+
     authBusy = true;
     notifyListeners();
     try {
@@ -386,7 +425,7 @@ class UstaadState extends ChangeNotifier {
       notifyListeners();
       return true;
     } on AuthException catch (error) {
-      bannerMessage = error.message;
+      _handleAuthEmailError(error, email);
       authBusy = false;
       notifyListeners();
       return false;
@@ -399,6 +438,13 @@ class UstaadState extends ChangeNotifier {
   }
 
   Future<bool> resetPassword(String email) async {
+    if (authEmailCoolingDown) {
+      bannerMessage =
+          'Email sending is cooling down. Try again in ${authEmailCooldownSeconds}s.';
+      notifyListeners();
+      return false;
+    }
+
     authBusy = true;
     notifyListeners();
     try {
@@ -407,6 +453,11 @@ class UstaadState extends ChangeNotifier {
       authBusy = false;
       notifyListeners();
       return true;
+    } on AuthException catch (error) {
+      _handleAuthEmailError(error, email);
+      authBusy = false;
+      notifyListeners();
+      return false;
     } catch (_) {
       bannerMessage = 'Password reset could not be sent.';
       authBusy = false;
@@ -416,6 +467,13 @@ class UstaadState extends ChangeNotifier {
   }
 
   Future<bool> resendConfirmationEmail(String email) async {
+    if (authEmailCoolingDown) {
+      bannerMessage =
+          'Email sending is cooling down. Try again in ${authEmailCooldownSeconds}s.';
+      notifyListeners();
+      return false;
+    }
+
     authBusy = true;
     notifyListeners();
     try {
@@ -425,6 +483,11 @@ class UstaadState extends ChangeNotifier {
       authBusy = false;
       notifyListeners();
       return true;
+    } on AuthException catch (error) {
+      _handleAuthEmailError(error, email);
+      authBusy = false;
+      notifyListeners();
+      return false;
     } catch (_) {
       bannerMessage = 'Could not resend confirmation email.';
       authBusy = false;
@@ -470,6 +533,18 @@ class UstaadState extends ChangeNotifier {
     providerReviews = const {};
     screen = UstaadScreen.gateway;
     notifyListeners();
+  }
+
+  void _handleAuthEmailError(AuthException error, String email) {
+    final message = error.message.toLowerCase();
+    if (message.contains('rate') || message.contains('limit')) {
+      authEmailCooldownUntil = DateTime.now().add(const Duration(minutes: 5));
+      pendingConfirmationEmail = email;
+      bannerMessage =
+          'Email rate limit reached. Wait ${authEmailCooldownSeconds}s, sign in if already confirmed, or continue as guest.';
+      return;
+    }
+    bannerMessage = error.message;
   }
 
   Future<void> refreshProviders({bool silent = false}) async {

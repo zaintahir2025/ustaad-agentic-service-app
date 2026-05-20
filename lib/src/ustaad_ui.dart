@@ -246,6 +246,9 @@ class _GatewayScreenState extends State<GatewayScreen> {
   Widget _loginForm() {
     final busy = context.watch<UstaadState>().authBusy;
     final pendingEmail = context.watch<UstaadState>().pendingConfirmationEmail;
+    final coolingDown = context.watch<UstaadState>().authEmailCoolingDown;
+    final cooldownSeconds =
+        context.watch<UstaadState>().authEmailCooldownSeconds;
     final colors = _AuthPalette.of(context);
     final loginLocked = _loginLocked;
     return Column(
@@ -255,7 +258,10 @@ class _GatewayScreenState extends State<GatewayScreen> {
         if (pendingEmail != null && pendingEmail.isNotEmpty) ...[
           _EmailConfirmationNotice(
             email: pendingEmail,
-            onResend: busy ? null : () => _resendConfirmation(pendingEmail),
+            cooldownSeconds: coolingDown ? cooldownSeconds : 0,
+            onResend: busy || coolingDown
+                ? null
+                : () => _resendConfirmation(pendingEmail),
           ),
           const SizedBox(height: 18),
         ],
@@ -312,12 +318,17 @@ class _GatewayScreenState extends State<GatewayScreen> {
           value: _remember,
           onChanged: (value) => setState(() => _remember = value),
         ),
+        const SizedBox(height: 10),
+        _GuestAccessButton(onPressed: busy ? null : _continueAsGuest),
       ],
     );
   }
 
   Widget _joinForm() {
     final busy = context.watch<UstaadState>().authBusy;
+    final coolingDown = context.watch<UstaadState>().authEmailCoolingDown;
+    final cooldownSeconds =
+        context.watch<UstaadState>().authEmailCooldownSeconds;
     final colors = _AuthPalette.of(context);
     final strength = _passwordStrength(_joinPassword.text);
     return Column(
@@ -357,7 +368,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
         _PasswordStrengthMeter(strength: strength),
         const SizedBox(height: 18),
         _AuthButton(
-          onPressed: busy ? null : _submitJoin,
+          onPressed: busy || coolingDown ? null : _submitJoin,
           child: busy
               ? SizedBox.square(
                   dimension: 18,
@@ -366,13 +377,27 @@ class _GatewayScreenState extends State<GatewayScreen> {
                     color: colors.fieldFill,
                   ),
                 )
-              : const Text('Create account'),
+              : Text(
+                  coolingDown
+                      ? 'Try again in ${cooldownSeconds}s'
+                      : 'Create account',
+                ),
         ),
+        if (coolingDown) ...[
+          const SizedBox(height: 10),
+          _SecurityInlineMessage(
+            icon: Icons.schedule,
+            text:
+                'Supabase paused email sending for a few minutes. You can still use guest mode.',
+          ),
+        ],
         const SizedBox(height: 14),
         _AuthRememberRow(
           value: _remember,
           onChanged: (value) => setState(() => _remember = value),
         ),
+        const SizedBox(height: 10),
+        _GuestAccessButton(onPressed: busy ? null : _continueAsGuest),
       ],
     );
   }
@@ -494,6 +519,23 @@ class _GatewayScreenState extends State<GatewayScreen> {
       return;
     }
     _show(context.read<UstaadState>().bannerMessage ?? 'Signup failed.');
+  }
+
+  Future<void> _continueAsGuest() async {
+    final name = _joinName.text.trim().isNotEmpty
+        ? _joinName.text.trim()
+        : _loginEmail.text.trim().isNotEmpty
+            ? _loginEmail.text.trim().split('@').first
+            : 'Guest Customer';
+    await context.read<UstaadState>().continueAsGuest(
+          name: name,
+          email: _joinEmail.text.trim().isNotEmpty
+              ? _joinEmail.text.trim()
+              : _loginEmail.text.trim(),
+          phone: _joinPhone.text.trim(),
+        );
+    if (!mounted) return;
+    _show(context.read<UstaadState>().bannerMessage ?? 'Guest mode active.');
   }
 
   Future<void> _submitPasswordRecovery() async {
@@ -1017,10 +1059,12 @@ class _EmailConfirmationNotice extends StatelessWidget {
   const _EmailConfirmationNotice({
     required this.email,
     required this.onResend,
+    this.cooldownSeconds = 0,
   });
 
   final String email;
   final VoidCallback? onResend;
+  final int cooldownSeconds;
 
   @override
   Widget build(BuildContext context) {
@@ -1053,7 +1097,9 @@ class _EmailConfirmationNotice extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'We sent a confirmation link to $email. Open it, then sign in.',
+            cooldownSeconds > 0
+                ? 'Supabase email is cooling down. Try resend again in ${cooldownSeconds}s.'
+                : 'We sent a confirmation link to $email. Open it, then sign in.',
             style: TextStyle(
               color: colors.muted,
               fontSize: 12,
@@ -1073,10 +1119,41 @@ class _EmailConfirmationNotice extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              child: const Text('Resend confirmation'),
+              child: Text(
+                cooldownSeconds > 0
+                    ? 'Resend available soon'
+                    : 'Resend confirmation',
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GuestAccessButton extends StatelessWidget {
+  const _GuestAccessButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.person_outline, size: 18),
+      label: const Text('Continue as guest'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colors.accent,
+        side: BorderSide(color: colors.accent.withValues(alpha: 0.55)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        textStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
       ),
     );
   }
