@@ -12,6 +12,8 @@ class UstaadRepository {
   final SupabaseClient _client;
   static const _networkTimeout = Duration(seconds: 8);
   static const _nativeAuthRedirectUrl = 'com.ustaad.service://auth-callback';
+  static const _webAuthRedirectUrl =
+      'https://zaintahir2025.github.io/ustaad-agentic-service-app/';
 
   static const List<UstaadProviderProfile> seedProviders = [
     UstaadProviderProfile(
@@ -253,13 +255,7 @@ class UstaadRepository {
 
   String authRedirectUrl() {
     if (!kIsWeb) return _nativeAuthRedirectUrl;
-    final base = Uri.base;
-    final path = base.path.isEmpty
-        ? '/'
-        : base.path.endsWith('/')
-            ? base.path
-            : '${base.path}/';
-    return '${base.origin}$path';
+    return _webAuthRedirectUrl;
   }
 
   Future<AuthSignUpResult> signUp({
@@ -335,14 +331,18 @@ class UstaadRepository {
     String email,
     String phone,
   ) {
-    _client.from('profiles').upsert({
-      'id': userId,
-      'full_name': name,
-      'email': email,
-      'phone': phone,
-      'city': 'Islamabad',
-      'preferred_language': 'English',
-    }).then((_) {}).catchError((_) {});
+    _client
+        .from('profiles')
+        .upsert({
+          'id': userId,
+          'full_name': name,
+          'email': email,
+          'phone': phone,
+          'city': 'Islamabad',
+          'preferred_language': 'English',
+        })
+        .then((_) {})
+        .catchError((_) {});
   }
 
   Future<UstaadUser> updateProfile({

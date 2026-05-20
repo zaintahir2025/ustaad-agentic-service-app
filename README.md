@@ -65,6 +65,10 @@ Email confirmation and password recovery are implemented in the app. Add these r
 - `https://zaintahir2025.github.io/ustaad-agentic-service-app/`
 - `com.ustaad.service://auth-callback`
 
+Set **Site URL** to:
+
+- `https://zaintahir2025.github.io/ustaad-agentic-service-app/`
+
 Keep **Confirm email** enabled. New users will stay on a check-email state until they open the confirmation link. Password reset links return to the app and show a secure new-password screen.
 
 Supabase's built-in email sender has strict rate limits. The app handles this with a cooldown message and guest access for demos. For production, configure a custom SMTP provider in Supabase Dashboard -> Authentication -> SMTP Settings.
