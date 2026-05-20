@@ -2582,22 +2582,20 @@ class _Panel extends StatelessWidget {
           ),
         );
       },
-      child: Container(
-        padding:
-            EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 14 : 18),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
+      child: Material(
+        color: Theme.of(context).cardColor,
+        elevation: 2,
+        shadowColor: Colors.black.withValues(alpha: 0.08),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Theme.of(context).dividerColor),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          side: BorderSide(color: Theme.of(context).dividerColor),
         ),
-        child: child,
+        child: Padding(
+          padding:
+              EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 14 : 18),
+          child: child,
+        ),
       ),
     );
   }
