@@ -459,23 +459,61 @@ class UstaadState extends ChangeNotifier {
       return true;
     } on AuthException catch (error) {
       _handleAuthEmailError(error, email);
-      if (authEmailCoolingDown) {
-        await _activateLocalSignup(
-          name: name,
-          email: email,
-          phone: phone,
-          remember: remember,
-          message:
-              'Account created locally. Supabase email limit is active, so cloud sync can wait.',
-        );
+
+      // The account may have been created despite the rate-limit error on
+      // the confirmation email. Try signing in with the credentials.
+      final cloudUser = await _repository.trySignInAfterSignUp(
+        email: email,
+        password: password,
+        name: name,
+        phone: phone,
+      );
+      if (cloudUser != null) {
+        user = cloudUser;
+        sessionExpiresAt = _repository.currentSessionExpiresAt();
+        await _rememberEmail(email, remember);
+        pendingConfirmationEmail = null;
+        bookings = const [];
+        bannerMessage = 'Account ready. Welcome, ${user!.firstName}.';
+        screen = UstaadScreen.commandCenter;
         authBusy = false;
         notifyListeners();
         return true;
       }
+
+      // Sign-in also failed; fall back to local account.
+      await _activateLocalSignup(
+        name: name,
+        email: email,
+        phone: phone,
+        remember: remember,
+        message:
+            'Account created locally. Cloud sync will be available once Supabase email limits reset.',
+      );
       authBusy = false;
       notifyListeners();
-      return false;
+      return true;
     } catch (_) {
+      // Network or unknown error — try signing in (account may already exist).
+      final cloudUser = await _repository.trySignInAfterSignUp(
+        email: email,
+        password: password,
+        name: name,
+        phone: phone,
+      );
+      if (cloudUser != null) {
+        user = cloudUser;
+        sessionExpiresAt = _repository.currentSessionExpiresAt();
+        await _rememberEmail(email, remember);
+        pendingConfirmationEmail = null;
+        bookings = const [];
+        bannerMessage = 'Account ready. Welcome, ${user!.firstName}.';
+        screen = UstaadScreen.commandCenter;
+        authBusy = false;
+        notifyListeners();
+        return true;
+      }
+
       await _activateLocalSignup(
         name: name,
         email: email,

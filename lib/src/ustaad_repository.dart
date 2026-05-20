@@ -284,25 +284,65 @@ class UstaadRepository {
     }
 
     final confirmationRequired = response.session == null;
-    if (!confirmationRequired) {
+
+    // If session is null (email confirmation required), try signing in
+    // directly. On free-tier Supabase with "Confirm email" turned off,
+    // or when the account was already confirmed, this will succeed and
+    // give us a real session.
+    if (confirmationRequired) {
       try {
-        await _client.from('profiles').upsert({
-          'id': user.id,
-          'full_name': name,
-          'email': email,
-          'phone': phone,
-          'city': 'Islamabad',
-          'preferred_language': 'English',
-        });
+        final signedInUser = await signIn(email: email, password: password);
+        _upsertProfileSilently(signedInUser.id, name, email, phone);
+        return AuthSignUpResult(
+          user: signedInUser,
+          emailConfirmationRequired: false,
+        );
       } catch (_) {
-        // The account can still be usable while the SQL migration is pending.
+        // Sign-in failed; the account genuinely needs email confirmation.
       }
+    }
+
+    if (!confirmationRequired) {
+      _upsertProfileSilently(user.id, name, email, phone);
     }
 
     return AuthSignUpResult(
       user: await fetchProfile() ?? _userFromSupabase(user),
       emailConfirmationRequired: confirmationRequired,
     );
+  }
+
+  /// Attempts to sign in with credentials after a failed or rate-limited
+  /// signup. Returns null if the sign-in also fails.
+  Future<UstaadUser?> trySignInAfterSignUp({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+  }) async {
+    try {
+      final user = await signIn(email: email, password: password);
+      _upsertProfileSilently(user.id, name, email, phone);
+      return user;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _upsertProfileSilently(
+    String userId,
+    String name,
+    String email,
+    String phone,
+  ) {
+    _client.from('profiles').upsert({
+      'id': userId,
+      'full_name': name,
+      'email': email,
+      'phone': phone,
+      'city': 'Islamabad',
+      'preferred_language': 'English',
+    }).then((_) {}).catchError((_) {});
   }
 
   Future<UstaadUser> updateProfile({
