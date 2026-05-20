@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/material.dart';
+
 enum UstaadScreen {
   gateway,
   commandCenter,
@@ -7,6 +9,7 @@ enum UstaadScreen {
   profile,
   selection,
   workflow,
+  aiChat,
 }
 
 class UstaadUser {
@@ -77,6 +80,16 @@ class UstaadUser {
   }
 }
 
+class AuthSignUpResult {
+  const AuthSignUpResult({
+    required this.user,
+    required this.emailConfirmationRequired,
+  });
+
+  final UstaadUser user;
+  final bool emailConfirmationRequired;
+}
+
 class UstaadProviderProfile {
   const UstaadProviderProfile({
     required this.id,
@@ -96,6 +109,8 @@ class UstaadProviderProfile {
     this.jobsCompleted = 120,
     this.score = 0,
     this.reason = '',
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -115,6 +130,8 @@ class UstaadProviderProfile {
   final int jobsCompleted;
   final double score;
   final String reason;
+  final double? latitude;
+  final double? longitude;
 
   String get nextSlot =>
       availabilitySlots.isEmpty ? 'Tomorrow 10:00 AM' : availabilitySlots.first;
@@ -138,6 +155,8 @@ class UstaadProviderProfile {
       jobsCompleted: jobsCompleted,
       score: value,
       reason: rankingReason,
+      latitude: latitude,
+      longitude: longitude,
     );
   }
 
@@ -158,6 +177,12 @@ class UstaadProviderProfile {
       responseTimeMinutes: _asInt(map['response_time_minutes'], fallback: 18),
       availabilitySlots: _asStringList(map['availability_slots']),
       jobsCompleted: _asInt(map['jobs_completed'], fallback: 120),
+      latitude: map['latitude'] == null
+          ? null
+          : _asDouble(map['latitude'], fallback: 33.6938),
+      longitude: map['longitude'] == null
+          ? null
+          : _asDouble(map['longitude'], fallback: 73.0652),
     );
   }
 }
@@ -390,6 +415,349 @@ class WorkflowEvent {
   final String message;
   final String toolName;
   final String status;
+}
+
+class EmergencyRequest {
+  const EmergencyRequest({
+    required this.id,
+    required this.serviceType,
+    required this.location,
+    required this.urgencyLevel,
+    required this.requestedAt,
+    this.status = 'dispatching',
+  });
+
+  final String id;
+  final String serviceType;
+  final String location;
+  final String urgencyLevel;
+  final DateTime requestedAt;
+  final String status;
+
+  factory EmergencyRequest.now(String serviceType, String location) {
+    final now = DateTime.now();
+    return EmergencyRequest(
+      id: 'emergency-${now.microsecondsSinceEpoch}',
+      serviceType: serviceType,
+      location: location,
+      urgencyLevel: 'CRITICAL',
+      requestedAt: now,
+    );
+  }
+}
+
+class AchievementBadge {
+  const AchievementBadge({
+    required this.id,
+    required this.title,
+    required this.emoji,
+    required this.description,
+    this.unlocked = false,
+    this.unlockedAt,
+  });
+
+  final String id;
+  final String title;
+  final String emoji;
+  final String description;
+  final bool unlocked;
+  final DateTime? unlockedAt;
+
+  AchievementBadge copyWith({
+    bool? unlocked,
+    DateTime? unlockedAt,
+  }) {
+    return AchievementBadge(
+      id: id,
+      title: title,
+      emoji: emoji,
+      description: description,
+      unlocked: unlocked ?? this.unlocked,
+      unlockedAt: unlockedAt ?? this.unlockedAt,
+    );
+  }
+
+  static List<AchievementBadge> defaultBadges() {
+    return const [
+      AchievementBadge(
+        id: 'first_request',
+        title: 'First Request',
+        emoji: '🚀',
+        description: 'Made your first service request',
+      ),
+      AchievementBadge(
+        id: 'first_booking',
+        title: 'First Booking',
+        emoji: '🏆',
+        description: 'Successfully booked your first Ustaad',
+      ),
+      AchievementBadge(
+        id: 'multilingual',
+        title: 'Language Master',
+        emoji: '🌐',
+        description: 'Used Urdu or Roman Urdu input',
+      ),
+      AchievementBadge(
+        id: 'emergency_hero',
+        title: 'Emergency Hero',
+        emoji: '⚡',
+        description: 'Used Emergency Fast-Track mode',
+      ),
+      AchievementBadge(
+        id: 'power_user',
+        title: 'Power User',
+        emoji: '💎',
+        description: 'Made 3 or more bookings',
+      ),
+    ];
+  }
+}
+
+class SmartSuggestion {
+  const SmartSuggestion({
+    required this.label,
+    required this.fullText,
+    required this.category,
+    required this.icon,
+  });
+
+  final String label;
+  final String fullText;
+  final String category;
+  final IconData icon;
+
+  static List<SmartSuggestion> popularSuggestions() {
+    return const [
+      SmartSuggestion(
+        label: 'AC Repair - G-13',
+        fullText: 'Mujhe kal subah G-13 mein AC technician chahiye',
+        category: 'popular',
+        icon: Icons.ac_unit,
+      ),
+      SmartSuggestion(
+        label: 'Kitchen leak',
+        fullText: 'Urgent pani leak in kitchen, plumber chahiye',
+        category: 'popular',
+        icon: Icons.water_drop,
+      ),
+      SmartSuggestion(
+        label: 'Electrician',
+        fullText: 'Bijli ka masla hai, electrician foran chahiye',
+        category: 'popular',
+        icon: Icons.electrical_services,
+      ),
+      SmartSuggestion(
+        label: 'Deep cleaning',
+        fullText: 'I need deep cleaning service for my apartment',
+        category: 'popular',
+        icon: Icons.cleaning_services,
+      ),
+      SmartSuggestion(
+        label: 'Math tutor',
+        fullText: 'Math tutor chahiye grade 8 ke liye',
+        category: 'popular',
+        icon: Icons.school,
+      ),
+      SmartSuggestion(
+        label: 'Beautician',
+        fullText: 'Home beautician chahiye makeup aur styling ke liye',
+        category: 'popular',
+        icon: Icons.face_retouching_natural,
+      ),
+    ];
+  }
+}
+
+class ProviderMapMarker {
+  const ProviderMapMarker({
+    required this.providerId,
+    required this.providerName,
+    required this.role,
+    required this.latitude,
+    required this.longitude,
+    required this.rating,
+    required this.distanceKm,
+    this.isRecommended = false,
+  });
+
+  final String providerId;
+  final String providerName;
+  final String role;
+  final double latitude;
+  final double longitude;
+  final double rating;
+  final int distanceKm;
+  final bool isRecommended;
+
+  static List<ProviderMapMarker> mockMarkersForIslamabad() {
+    return const [
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000001',
+        providerName: 'Ahmed Khan',
+        role: 'Electrician',
+        latitude: 33.6938,
+        longitude: 73.0652,
+        rating: 4.9,
+        distanceKm: 5,
+        isRecommended: true,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000002',
+        providerName: 'Bilal Tariq',
+        role: 'Electrician',
+        latitude: 33.7215,
+        longitude: 73.0433,
+        rating: 4.2,
+        distanceKm: 2,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000003',
+        providerName: 'Kamran Ali',
+        role: 'Plumber',
+        latitude: 33.6835,
+        longitude: 73.0477,
+        rating: 4.7,
+        distanceKm: 8,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000004',
+        providerName: 'Sajid Hussain',
+        role: 'AC Repair',
+        latitude: 33.7083,
+        longitude: 73.0479,
+        rating: 4.5,
+        distanceKm: 3,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000005',
+        providerName: 'Usman Ghani',
+        role: 'Electrician',
+        latitude: 33.6602,
+        longitude: 73.1167,
+        rating: 5.0,
+        distanceKm: 12,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000006',
+        providerName: 'Nadia Services',
+        role: 'Cleaning',
+        latitude: 33.7294,
+        longitude: 73.0935,
+        rating: 4.8,
+        distanceKm: 6,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000007',
+        providerName: 'Ayesha Tutors',
+        role: 'Tutor',
+        latitude: 33.7018,
+        longitude: 73.0551,
+        rating: 4.9,
+        distanceKm: 4,
+      ),
+      ProviderMapMarker(
+        providerId: '00000000-0000-0000-0000-000000000008',
+        providerName: 'Zara Beauty Studio',
+        role: 'Beautician',
+        latitude: 33.7139,
+        longitude: 73.1089,
+        rating: 4.8,
+        distanceKm: 7,
+      ),
+    ];
+  }
+}
+
+class LocationSuggestion {
+  const LocationSuggestion({
+    required this.label,
+    required this.latitude,
+    required this.longitude,
+    this.subtitle = '',
+  });
+
+  final String label;
+  final String subtitle;
+  final double latitude;
+  final double longitude;
+
+  String get locationText {
+    final lat = latitude.toStringAsFixed(5);
+    final lng = longitude.toStringAsFixed(5);
+    return '$label ($lat, $lng)';
+  }
+
+  factory LocationSuggestion.fromNominatim(Map<String, dynamic> map) {
+    final display = '${map['display_name'] ?? 'Islamabad'}';
+    final parts = display.split(',').map((part) => part.trim()).toList();
+    final title = parts.take(2).join(', ');
+    final subtitle = parts.skip(2).take(3).join(', ');
+    return LocationSuggestion(
+      label: title.isEmpty ? display : title,
+      subtitle: subtitle,
+      latitude: _asDouble(map['lat'], fallback: 33.6938),
+      longitude: _asDouble(map['lon'], fallback: 73.0652),
+    );
+  }
+}
+
+class RouteEstimate {
+  const RouteEstimate({
+    required this.distanceKm,
+    required this.durationMinutes,
+    required this.source,
+  });
+
+  final double distanceKm;
+  final int durationMinutes;
+  final String source;
+
+  factory RouteEstimate.fromOsrm(Map<String, dynamic> map) {
+    final routes = map['routes'];
+    final route = routes is List && routes.isNotEmpty ? routes.first : null;
+    final routeMap = route is Map ? Map<String, dynamic>.from(route) : null;
+    return RouteEstimate(
+      distanceKm: _asDouble(routeMap?['distance'], fallback: 0) / 1000,
+      durationMinutes: math.max(
+          1, (_asDouble(routeMap?['duration'], fallback: 60) / 60).round()),
+      source: 'OSRM',
+    );
+  }
+
+  factory RouteEstimate.fallback({
+    required double fromLat,
+    required double fromLng,
+    required double toLat,
+    required double toLng,
+  }) {
+    final km = _haversineKm(fromLat, fromLng, toLat, toLng);
+    return RouteEstimate(
+      distanceKm: km,
+      durationMinutes: math.max(5, (km * 4).round()),
+      source: 'Local estimate',
+    );
+  }
+}
+
+double _haversineKm(
+  double fromLat,
+  double fromLng,
+  double toLat,
+  double toLng,
+) {
+  const earthKm = 6371.0;
+  final dLat = _degreesToRadians(toLat - fromLat);
+  final dLng = _degreesToRadians(toLng - fromLng);
+  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+      math.cos(_degreesToRadians(fromLat)) *
+          math.cos(_degreesToRadians(toLat)) *
+          math.sin(dLng / 2) *
+          math.sin(dLng / 2);
+  return earthKm * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+}
+
+double _degreesToRadians(double value) {
+  return value * math.pi / 180;
 }
 
 int etaMinutesFor(UstaadProviderProfile provider) {

@@ -1,5 +1,7 @@
-import 'dart:typed_data';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'models.dart';
@@ -8,6 +10,8 @@ class UstaadRepository {
   UstaadRepository(this._client);
 
   final SupabaseClient _client;
+  static const _networkTimeout = Duration(seconds: 8);
+  static const _nativeAuthRedirectUrl = 'com.ustaad.service://auth-callback';
 
   static const List<UstaadProviderProfile> seedProviders = [
     UstaadProviderProfile(
@@ -26,6 +30,8 @@ class UstaadRepository {
       responseTimeMinutes: 14,
       availabilitySlots: ['Today 4:00 PM', 'Tomorrow 10:00 AM'],
       jobsCompleted: 182,
+      latitude: 33.6938,
+      longitude: 73.0652,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000002',
@@ -43,6 +49,8 @@ class UstaadRepository {
       responseTimeMinutes: 18,
       availabilitySlots: ['Today 6:30 PM', 'Tomorrow 11:30 AM'],
       jobsCompleted: 74,
+      latitude: 33.7215,
+      longitude: 73.0433,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000003',
@@ -60,6 +68,8 @@ class UstaadRepository {
       responseTimeMinutes: 16,
       availabilitySlots: ['Tomorrow 9:30 AM', 'Tomorrow 3:00 PM'],
       jobsCompleted: 141,
+      latitude: 33.6835,
+      longitude: 73.0477,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000004',
@@ -77,6 +87,8 @@ class UstaadRepository {
       responseTimeMinutes: 20,
       availabilitySlots: ['Tomorrow 10:00 AM', 'Tomorrow 5:00 PM'],
       jobsCompleted: 217,
+      latitude: 33.7083,
+      longitude: 73.0479,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000005',
@@ -94,6 +106,8 @@ class UstaadRepository {
       responseTimeMinutes: 22,
       availabilitySlots: ['Today 8:00 PM', 'Tomorrow 2:00 PM'],
       jobsCompleted: 236,
+      latitude: 33.6602,
+      longitude: 73.1167,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000006',
@@ -111,6 +125,8 @@ class UstaadRepository {
       responseTimeMinutes: 24,
       availabilitySlots: ['Today 5:30 PM', 'Tomorrow 12:00 PM'],
       jobsCompleted: 96,
+      latitude: 33.7294,
+      longitude: 73.0935,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000007',
@@ -128,6 +144,8 @@ class UstaadRepository {
       responseTimeMinutes: 35,
       availabilitySlots: ['Tomorrow 9:00 AM', 'Tomorrow 6:00 PM'],
       jobsCompleted: 128,
+      latitude: 33.7018,
+      longitude: 73.0551,
     ),
     UstaadProviderProfile(
       id: '00000000-0000-0000-0000-000000000008',
@@ -145,6 +163,8 @@ class UstaadRepository {
       responseTimeMinutes: 40,
       availabilitySlots: ['Today 7:00 PM', 'Tomorrow 1:00 PM'],
       jobsCompleted: 109,
+      latitude: 33.7139,
+      longitude: 73.1089,
     ),
   ];
 
@@ -229,7 +249,20 @@ class UstaadRepository {
     return await fetchProfile() ?? _userFromSupabase(user);
   }
 
-  Future<UstaadUser> signUp({
+  Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
+
+  String authRedirectUrl() {
+    if (!kIsWeb) return _nativeAuthRedirectUrl;
+    final base = Uri.base;
+    final path = base.path.isEmpty
+        ? '/'
+        : base.path.endsWith('/')
+            ? base.path
+            : '${base.path}/';
+    return '${base.origin}$path';
+  }
+
+  Future<AuthSignUpResult> signUp({
     required String name,
     required String email,
     required String phone,
@@ -238,6 +271,7 @@ class UstaadRepository {
     final response = await _client.auth.signUp(
       email: email,
       password: password,
+      emailRedirectTo: authRedirectUrl(),
       data: {
         'full_name': name,
         'phone': phone,
@@ -249,7 +283,8 @@ class UstaadRepository {
       throw const AuthException('Unable to create account.');
     }
 
-    if (response.session != null) {
+    final confirmationRequired = response.session == null;
+    if (!confirmationRequired) {
       try {
         await _client.from('profiles').upsert({
           'id': user.id,
@@ -264,7 +299,10 @@ class UstaadRepository {
       }
     }
 
-    return await fetchProfile() ?? _userFromSupabase(user);
+    return AuthSignUpResult(
+      user: await fetchProfile() ?? _userFromSupabase(user),
+      emailConfirmationRequired: confirmationRequired,
+    );
   }
 
   Future<UstaadUser> updateProfile({
@@ -340,8 +378,30 @@ class UstaadRepository {
     return _client.storage.from('avatars').getPublicUrl(path);
   }
 
+  Future<void> resendEmailConfirmation(String email) {
+    return _client.auth.resend(
+      email: email,
+      type: OtpType.signup,
+      emailRedirectTo: authRedirectUrl(),
+    );
+  }
+
   Future<void> resetPassword(String email) {
-    return _client.auth.resetPasswordForEmail(email);
+    return _client.auth.resetPasswordForEmail(
+      email,
+      redirectTo: authRedirectUrl(),
+    );
+  }
+
+  Future<UstaadUser> updatePassword(String password) async {
+    final response = await _client.auth.updateUser(
+      UserAttributes(password: password),
+    );
+    final updatedUser = response.user ?? _client.auth.currentUser;
+    if (updatedUser == null) {
+      throw const AuthException('Open the reset link before setting password.');
+    }
+    return await fetchProfile() ?? _userFromSupabase(updatedUser);
   }
 
   Future<void> signOut() {
@@ -361,6 +421,73 @@ class UstaadRepository {
               UstaadProviderProfile.fromMap(Map<String, dynamic>.from(row)),
         )
         .toList();
+  }
+
+  Future<List<LocationSuggestion>> searchLocations(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 2) return const [];
+
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': '$trimmed, Pakistan',
+      'format': 'jsonv2',
+      'limit': '5',
+      'addressdetails': '1',
+    });
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'Ustaad/1.0 (com.ustaad.service)',
+        },
+      ).timeout(_networkTimeout);
+      if (response.statusCode != 200) return _fallbackLocations(trimmed);
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) return _fallbackLocations(trimmed);
+      final results = decoded
+          .whereType<Map>()
+          .map((item) => LocationSuggestion.fromNominatim(
+                Map<String, dynamic>.from(item),
+              ))
+          .toList();
+      return results.isEmpty ? _fallbackLocations(trimmed) : results;
+    } catch (_) {
+      return _fallbackLocations(trimmed);
+    }
+  }
+
+  Future<RouteEstimate> estimateRoute({
+    required double fromLat,
+    required double fromLng,
+    required double toLat,
+    required double toLng,
+  }) async {
+    final uri = Uri.parse(
+      'https://router.project-osrm.org/route/v1/driving/'
+      '$fromLng,$fromLat;$toLng,$toLat?overview=false',
+    );
+
+    try {
+      final response = await http.get(uri).timeout(_networkTimeout);
+      if (response.statusCode != 200) {
+        return RouteEstimate.fallback(
+          fromLat: fromLat,
+          fromLng: fromLng,
+          toLat: toLat,
+          toLng: toLng,
+        );
+      }
+      return RouteEstimate.fromOsrm(
+        Map<String, dynamic>.from(jsonDecode(response.body)),
+      );
+    } catch (_) {
+      return RouteEstimate.fallback(
+        fromLat: fromLat,
+        fromLng: fromLng,
+        toLat: toLat,
+        toLng: toLng,
+      );
+    }
   }
 
   Future<List<BookingRecord>> fetchBookings() async {
@@ -458,6 +585,85 @@ class UstaadRepository {
     );
   }
 
+  Future<BookingRecord> createEmergencyBooking({
+    required UstaadProviderProfile provider,
+    required EmergencyRequest emergency,
+    required QuoteEstimate quote,
+  }) async {
+    final user = _client.auth.currentUser;
+    if (user == null) {
+      return _localEmergencyBooking(
+        provider: provider,
+        emergency: emergency,
+        quote: quote,
+      );
+    }
+
+    try {
+      final booking = await _client
+          .from('bookings')
+          .insert({
+            'user_id': user.id,
+            'provider_id': provider.id,
+            'provider_name': provider.name,
+            'service_role': provider.role,
+            'problem_text': 'Emergency ${emergency.serviceType} request',
+            'service_location': emergency.location,
+            'urgency': 'CRITICAL',
+            'quote_base': quote.basePrice,
+            'quote_distance': quote.distancePrice,
+            'quote_urgency': quote.urgencyPrice,
+            'quote_total': quote.total,
+            'status': 'en_route',
+            'eta_minutes': 10,
+            'slot_label': 'Immediate dispatch',
+            'provider_phone': provider.phone,
+            'provider_whatsapp': provider.whatsapp,
+            'confirmation_message':
+                'EMERGENCY booking - provider dispatched immediately.',
+          })
+          .select()
+          .single();
+
+      return BookingRecord.fromMap(
+        Map<String, dynamic>.from(booking),
+        providerFallback: provider,
+      );
+    } catch (_) {
+      return _localEmergencyBooking(
+        provider: provider,
+        emergency: emergency,
+        quote: quote,
+      );
+    }
+  }
+
+  BookingRecord _localEmergencyBooking({
+    required UstaadProviderProfile provider,
+    required EmergencyRequest emergency,
+    required QuoteEstimate quote,
+  }) {
+    return BookingRecord(
+      id: 'local-emergency-${DateTime.now().microsecondsSinceEpoch}',
+      providerId: provider.id,
+      providerName: provider.name,
+      serviceRole: provider.role,
+      problemText: 'Emergency ${emergency.serviceType} request',
+      location: emergency.location,
+      status: 'en_route',
+      quoteTotal: quote.total,
+      etaMinutes: 10,
+      slotLabel: 'Immediate dispatch',
+      confirmationMessage:
+          'EMERGENCY booking - provider dispatched immediately.',
+      createdAt: DateTime.now(),
+      providerPhone: provider.phone,
+      providerWhatsapp: provider.whatsapp,
+      providerAvatarUrl: provider.avatarUrl,
+      providerRating: provider.rating,
+    );
+  }
+
   Future<BookingRecord> updateBookingStatus({
     required String bookingId,
     required String status,
@@ -487,6 +693,47 @@ class UstaadRepository {
     } catch (_) {
       return seedReviews[providerId] ?? const [];
     }
+  }
+
+  List<LocationSuggestion> _fallbackLocations(String query) {
+    final lower = query.toLowerCase();
+    const locations = [
+      LocationSuggestion(
+        label: 'G-13, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.6938,
+        longitude: 73.0652,
+      ),
+      LocationSuggestion(
+        label: 'F-8, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.7215,
+        longitude: 73.0433,
+      ),
+      LocationSuggestion(
+        label: 'I-8, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.6835,
+        longitude: 73.0477,
+      ),
+      LocationSuggestion(
+        label: 'E-11, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.7294,
+        longitude: 73.0935,
+      ),
+      LocationSuggestion(
+        label: 'Blue Area, Islamabad',
+        subtitle: 'Islamabad Capital Territory',
+        latitude: 33.7136,
+        longitude: 73.0605,
+      ),
+    ];
+
+    final matches = locations
+        .where((location) => location.label.toLowerCase().contains(lower))
+        .toList();
+    return matches.isEmpty ? locations.take(3).toList() : matches;
   }
 
   Future<ReviewRecord> createReview({

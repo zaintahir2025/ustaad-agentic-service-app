@@ -16,8 +16,80 @@ const Color ustaadLightFieldFill = Color(0xFFFFFFFF);
 const Color ustaadLightBorder = Color(0xFFD7DDCB);
 const Color ustaadLightMuted = Color(0xFF62685B);
 const Color ustaadLightText = Color(0xFF101010);
+const Color ustaadEmergency = Color(0xFFE53935);
+const Color ustaadEmergencyLight = Color(0xFFFFCDD2);
+const Color ustaadGold = Color(0xFFFFD700);
+const Color ustaadGoldDark = Color(0xFFFF8F00);
+const Color ustaadSuccess = Color(0xFF43A047);
+
+const TextStyle ustaadBadgeTitle = TextStyle(
+  fontSize: 11,
+  fontWeight: FontWeight.w800,
+  letterSpacing: 0.3,
+);
+
+const TextStyle ustaadEmergencyLabel = TextStyle(
+  fontSize: 13,
+  fontWeight: FontWeight.w900,
+  color: Colors.white,
+  letterSpacing: 1.2,
+);
 
 class UstaadTheme {
+  static BoxDecoration get emergencyBannerDecoration {
+    return BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [ustaadEmergency, Color(0xFFB71C1C)],
+      ),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: ustaadEmergencyLight.withValues(alpha: 0.7)),
+      boxShadow: [
+        BoxShadow(
+          color: ustaadEmergency.withValues(alpha: 0.24),
+          blurRadius: 18,
+          offset: const Offset(0, 8),
+        ),
+      ],
+    );
+  }
+
+  static BoxDecoration achievementCardDecoration(bool unlocked) {
+    if (unlocked) {
+      return BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFF4B8), ustaadGold, ustaadGoldDark],
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ustaadGold, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: ustaadGold.withValues(alpha: 0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      );
+    }
+
+    return BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF343434), Color(0xFF202020)],
+      ),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: const Color(0xFF575757)),
+    );
+  }
+
+  static BoxDecoration get mapLegendDecoration {
+    return BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+    );
+  }
+
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(
       seedColor: ustaadLightPrimary,

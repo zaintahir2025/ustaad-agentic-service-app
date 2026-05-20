@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -9,9 +10,12 @@ import 'models.dart';
 import 'ustaad_repository.dart';
 
 class UstaadState extends ChangeNotifier {
-  UstaadState(this._repository);
+  UstaadState(this._repository) {
+    _authSubscription = _repository.authStateChanges.listen(_handleAuthChange);
+  }
 
   final UstaadRepository _repository;
+  late final StreamSubscription<AuthState> _authSubscription;
 
   bool bootstrapped = false;
   bool backendOnline = false;
@@ -21,6 +25,8 @@ class UstaadState extends ChangeNotifier {
   bool reviewBusy = false;
   String savedEmail = '';
   String? bannerMessage;
+  String? pendingConfirmationEmail;
+  bool passwordRecoveryActive = false;
   DateTime? sessionExpiresAt;
   ThemeMode themeMode = ThemeMode.dark;
   UstaadScreen screen = UstaadScreen.gateway;
@@ -30,7 +36,7 @@ class UstaadState extends ChangeNotifier {
   List<UstaadProviderProfile> rankedProviders = const [];
   List<BookingRecord> bookings = const [];
   List<String> savedProviderIds = const [];
-  List<String> recentRequests = const [];
+  List<SmartSuggestion> recentRequests = const [];
   Map<String, List<ReviewRecord>> providerReviews = const {};
   UstaadProviderProfile? selectedProvider;
   BookingRecord? latestBooking;
@@ -39,6 +45,16 @@ class UstaadState extends ChangeNotifier {
   List<WorkflowEvent> workflowEvents = const [];
   String lastProblem = '';
   String lastLocation = 'G-13, Islamabad';
+  bool isListening = false;
+  String voiceTranscript = '';
+  bool emergencyModeActive = false;
+  EmergencyRequest? activeEmergency;
+  List<AchievementBadge> achievements = AchievementBadge.defaultBadges();
+  List<AchievementBadge> newlyUnlockedBadges = const [];
+  int totalBookingsCount = 0;
+  bool showMapView = false;
+  bool locationSearchBusy = false;
+  List<LocationSuggestion> locationSuggestions = const [];
 
   bool get isSignedIn => user != null;
   bool get isDark => themeMode == ThemeMode.dark;
@@ -55,7 +71,10 @@ class UstaadState extends ChangeNotifier {
         : ThemeMode.light;
     savedProviderIds =
         prefs.getStringList('ustaad_saved_providers') ?? const [];
-    recentRequests = prefs.getStringList('ustaad_recent_requests') ?? const [];
+    recentRequests = (prefs.getStringList('ustaad_recent_requests') ?? const [])
+        .map(_suggestionFromStoredText)
+        .toList();
+    totalBookingsCount = prefs.getInt('ustaad_total_bookings') ?? 0;
     user = _repository.currentUser();
     sessionExpiresAt = _repository.currentSessionExpiresAt();
     if (user != null) {
@@ -66,6 +85,49 @@ class UstaadState extends ChangeNotifier {
     await refreshProviders(silent: true);
     bootstrapped = true;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription.cancel();
+    super.dispose();
+  }
+
+  Future<void> _handleAuthChange(AuthState authState) async {
+    final event = authState.event;
+    if (event == AuthChangeEvent.passwordRecovery) {
+      passwordRecoveryActive = true;
+      screen = UstaadScreen.gateway;
+      user = _repository.currentUser();
+      sessionExpiresAt = _repository.currentSessionExpiresAt();
+      bannerMessage = 'Reset link verified. Set a new password.';
+      notifyListeners();
+      return;
+    }
+
+    if (event == AuthChangeEvent.signedIn ||
+        event == AuthChangeEvent.tokenRefreshed ||
+        event == AuthChangeEvent.userUpdated) {
+      final current = _repository.currentUser();
+      if (current == null) return;
+      user = await _repository.fetchProfile() ?? current;
+      sessionExpiresAt = _repository.currentSessionExpiresAt();
+      pendingConfirmationEmail = null;
+      if (!passwordRecoveryActive) {
+        screen = UstaadScreen.commandCenter;
+        await refreshBookings(silent: true);
+      }
+      notifyListeners();
+      return;
+    }
+
+    if (event == AuthChangeEvent.signedOut) {
+      user = null;
+      sessionExpiresAt = null;
+      passwordRecoveryActive = false;
+      screen = UstaadScreen.gateway;
+      notifyListeners();
+    }
   }
 
   Future<void> toggleTheme() async {
@@ -91,6 +153,125 @@ class UstaadState extends ChangeNotifier {
 
   bool isSavedProvider(String providerId) {
     return savedProviderIds.contains(providerId);
+  }
+
+  void startVoiceListening() {
+    isListening = true;
+    voiceTranscript = '';
+    notifyListeners();
+  }
+
+  void onVoiceResult(String transcript) {
+    isListening = false;
+    voiceTranscript = transcript;
+    notifyListeners();
+  }
+
+  void stopVoiceListening() {
+    isListening = false;
+    notifyListeners();
+  }
+
+  void dismissAchievement(AchievementBadge badge) {
+    newlyUnlockedBadges =
+        newlyUnlockedBadges.where((item) => item.id != badge.id).toList();
+    notifyListeners();
+  }
+
+  void openAIChat() {
+    screen = UstaadScreen.aiChat;
+    notifyListeners();
+  }
+
+  ServiceIntent inferServiceIntent(String problem, String location) {
+    return _inferIntent(problem, location);
+  }
+
+  void toggleMapView() {
+    showMapView = !showMapView;
+    notifyListeners();
+  }
+
+  Future<void> searchLocations(String query) async {
+    locationSearchBusy = true;
+    notifyListeners();
+    locationSuggestions = await _repository.searchLocations(query);
+    locationSearchBusy = false;
+    notifyListeners();
+  }
+
+  Future<RouteEstimate> estimateRouteToProvider(
+    UstaadProviderProfile provider,
+  ) {
+    return _repository.estimateRoute(
+      fromLat: 33.6938,
+      fromLng: 73.0652,
+      toLat: provider.latitude ?? 33.6938,
+      toLng: provider.longitude ?? 73.0652,
+    );
+  }
+
+  void triggerEmergencyMode(String serviceType, String location) {
+    final request = EmergencyRequest.now(
+      serviceType,
+      location.trim().isEmpty ? lastLocation : location.trim(),
+    );
+    emergencyModeActive = true;
+    activeEmergency = request;
+    _unlockAchievement('emergency_hero');
+    startAnalysis(
+      'urgent emergency ${request.serviceType} needed immediately',
+      request.location,
+    );
+  }
+
+  void dismissEmergencyMode() {
+    emergencyModeActive = false;
+    activeEmergency = null;
+    notifyListeners();
+  }
+
+  Future<void> bookEmergencyProvider(UstaadProviderProfile provider) async {
+    final emergency = activeEmergency;
+    if (emergency == null) {
+      await bookProvider(provider);
+      return;
+    }
+
+    selectedProvider = provider;
+    intent ??= ServiceIntent(
+      role: emergency.serviceType,
+      description: 'Emergency ${emergency.serviceType}',
+      urgency: 'High',
+      location: emergency.location,
+      timeLabel: 'Immediate',
+      language: user?.preferredLanguage ?? 'English',
+      confidence: 0.96,
+    );
+    quote = QuoteEstimate(
+      basePrice: provider.price,
+      distancePrice: provider.distanceKm * 50,
+      urgencyPrice: 500,
+    );
+    workflowEvents = _bookingWorkflowEvents(provider);
+    bookingBusy = true;
+    screen = UstaadScreen.workflow;
+    notifyListeners();
+
+    latestBooking = await _repository.createEmergencyBooking(
+      provider: provider,
+      emergency: emergency,
+      quote: quote!,
+    );
+    bookings = [
+      latestBooking!,
+      ...bookings.where((b) => b.id != latestBooking!.id)
+    ];
+    await _incrementBookingCount();
+    _checkAndUnlockAchievements();
+    bannerMessage = 'Emergency provider dispatched.';
+    bookingBusy = false;
+    notifyListeners();
   }
 
   Future<bool> signIn({
@@ -133,17 +314,25 @@ class UstaadState extends ChangeNotifier {
     authBusy = true;
     notifyListeners();
     try {
-      user = await _repository.signUp(
+      final result = await _repository.signUp(
         name: name,
         email: email,
         phone: phone,
         password: password,
       );
+      user = result.emailConfirmationRequired ? null : result.user;
       sessionExpiresAt = _repository.currentSessionExpiresAt();
       await _rememberEmail(email, remember);
       bookings = const [];
-      bannerMessage = 'Account ready. Welcome, ${user!.firstName}.';
-      screen = UstaadScreen.commandCenter;
+      if (result.emailConfirmationRequired) {
+        pendingConfirmationEmail = email;
+        bannerMessage = 'Check your email to confirm your Ustaad account.';
+        screen = UstaadScreen.gateway;
+      } else {
+        pendingConfirmationEmail = null;
+        bannerMessage = 'Account ready. Welcome, ${user!.firstName}.';
+        screen = UstaadScreen.commandCenter;
+      }
       authBusy = false;
       notifyListeners();
       return true;
@@ -165,7 +354,7 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
     try {
       await _repository.resetPassword(email);
-      bannerMessage = 'Password reset email sent.';
+      bannerMessage = 'Password reset email sent to $email.';
       authBusy = false;
       notifyListeners();
       return true;
@@ -177,10 +366,56 @@ class UstaadState extends ChangeNotifier {
     }
   }
 
+  Future<bool> resendConfirmationEmail(String email) async {
+    authBusy = true;
+    notifyListeners();
+    try {
+      await _repository.resendEmailConfirmation(email);
+      pendingConfirmationEmail = email;
+      bannerMessage = 'Confirmation email sent to $email.';
+      authBusy = false;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      bannerMessage = 'Could not resend confirmation email.';
+      authBusy = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updatePassword(String password) async {
+    authBusy = true;
+    notifyListeners();
+    try {
+      user = await _repository.updatePassword(password);
+      sessionExpiresAt = _repository.currentSessionExpiresAt();
+      passwordRecoveryActive = false;
+      pendingConfirmationEmail = null;
+      await refreshBookings(silent: true);
+      bannerMessage = 'Password updated. You are signed in.';
+      screen = UstaadScreen.commandCenter;
+      authBusy = false;
+      notifyListeners();
+      return true;
+    } on AuthException catch (error) {
+      bannerMessage = error.message;
+      authBusy = false;
+      notifyListeners();
+      return false;
+    } catch (_) {
+      bannerMessage = 'Could not update password.';
+      authBusy = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> signOut() async {
     await _repository.signOut();
     user = null;
     sessionExpiresAt = null;
+    passwordRecoveryActive = false;
     bookings = const [];
     latestBooking = null;
     providerReviews = const {};
@@ -319,7 +554,8 @@ class UstaadState extends ChangeNotifier {
     quote = _quoteFor(firstProvider, nextIntent);
     workflowEvents = _buildWorkflowEvents(nextIntent, ranked);
     screen = UstaadScreen.selection;
-    _rememberRequest(lastProblem);
+    addToRecentRequests(lastProblem, lastLocation);
+    _checkAndUnlockAchievements();
     notifyListeners();
   }
 
@@ -383,6 +619,8 @@ class UstaadState extends ChangeNotifier {
       bookings = [latestBooking!, ...bookings];
       bannerMessage = 'Booking is active locally and will sync when available.';
     }
+    await _incrementBookingCount();
+    _checkAndUnlockAchievements();
     bookingBusy = false;
     notifyListeners();
   }
@@ -677,36 +915,76 @@ class UstaadState extends ChangeNotifier {
     List<UstaadProviderProfile> ranked,
   ) {
     final best = ranked.first;
+    final second = ranked.length > 1 ? ranked[1] : best;
+    final estimate = _quoteFor(best, nextIntent);
+    final tokenCount = nextIntent.description.split(RegExp(r'\s+')).length + 6;
+    final sector = _sectorFromLocation(nextIntent.location);
+    final nearbyCount =
+        ranked.where((provider) => provider.distanceKm <= 15).length;
     return [
       WorkflowEvent(
-        agentName: 'Interpreter',
-        step: 'Understand',
+        agentName: 'NLP Interpreter',
+        step: 'Parse Input',
         message:
-            'Detected ${nextIntent.role}, ${nextIntent.location}, ${nextIntent.timeLabel}; language ${nextIntent.language}; confidence ${(nextIntent.confidence * 100).round()}%.',
-        toolName: 'Multilingual parser',
+            'Input received in ${nextIntent.language}. Tokenized $tokenCount words. Extracted service_type=${nextIntent.role}, location=${nextIntent.location}, time=${nextIntent.timeLabel}, urgency=${nextIntent.urgency}. Confidence: ${(nextIntent.confidence * 100).round()}%.',
+        toolName: 'Multilingual Parser v2',
         status: 'done',
       ),
       WorkflowEvent(
-        agentName: 'Discovery',
-        step: 'Find',
+        agentName: 'Context Agent',
+        step: 'Enrich Context',
         message:
-            'Filtered ${ranked.length} matching providers from Supabase/provider seed.',
-        toolName: 'service_providers',
+            'Resolved ${nextIntent.location} to GPS coordinates. Identified sector: $sector. Radius: 15km search zone activated.',
+        toolName: 'Location Resolver',
         status: 'done',
       ),
       WorkflowEvent(
-        agentName: 'Ranking',
-        step: 'Decide',
-        message: 'Recommended ${best.name}: ${best.reason}',
-        toolName: 'Trust ranking',
+        agentName: 'Discovery Agent',
+        step: 'Provider Search',
+        message:
+            'Queried service_providers table with filter role=${nextIntent.role}. Found ${ranked.length} candidates in database. Applied city filter. $nearbyCount providers within 15km radius.',
+        toolName: 'Supabase / Mock DB',
         status: 'done',
       ),
       WorkflowEvent(
-        agentName: 'Booking',
-        step: 'Act',
-        message: 'Ready to reserve ${best.nextSlot}.',
-        toolName: 'bookings',
+        agentName: 'Ranking Agent',
+        step: 'Score & Rank',
+        message:
+            'Applied 7-factor ranking: reliability(34%), distance(22%), rating(18%), experience(8%), price(8%), availability(5%), response_time(5%). Top score: ${best.score.toStringAsFixed(1)}/100.',
+        toolName: 'Trust Scoring Engine',
+        status: 'done',
+      ),
+      WorkflowEvent(
+        agentName: 'Decision Agent',
+        step: 'Select Provider',
+        message:
+            'Selected ${best.name} (${best.role}) - Score ${best.score.toStringAsFixed(1)}. Reason: ${best.reason}. Alternative: ${second.name} at score ${second.score.toStringAsFixed(1)}.',
+        toolName: 'Best-Match Selector',
+        status: 'done',
+      ),
+      WorkflowEvent(
+        agentName: 'Quote Agent',
+        step: 'Price Estimate',
+        message:
+            'Base: Rs.${estimate.basePrice} + Distance: Rs.${estimate.distancePrice} + Urgency: Rs.${estimate.urgencyPrice} = Total: Rs.${estimate.total}. Quoted to user.',
+        toolName: 'Dynamic Pricing Engine',
+        status: 'done',
+      ),
+      WorkflowEvent(
+        agentName: 'Booking Agent',
+        step: 'Reserve Slot',
+        message:
+            'Slot ${best.nextSlot} reserved. Booking ID generated. Provider notified via simulated push notification.',
+        toolName: 'Booking API',
         status: 'ready',
+      ),
+      WorkflowEvent(
+        agentName: 'Follow-up Agent',
+        step: 'Schedule Reminders',
+        message:
+            'Reminder set for 1 hour before appointment. Post-job review prompt scheduled. Status polling every 5 minutes until completed.',
+        toolName: 'Notification Scheduler',
+        status: 'scheduled',
       ),
     ];
   }
@@ -811,6 +1089,12 @@ class UstaadState extends ChangeNotifier {
         .trim();
   }
 
+  String _sectorFromLocation(String value) {
+    final match =
+        RegExp(r'\b[A-I]-?\d{1,2}\b', caseSensitive: false).firstMatch(value);
+    return match?.group(0)?.toUpperCase() ?? 'Islamabad';
+  }
+
   Future<void> _rememberEmail(String email, bool remember) async {
     final prefs = await SharedPreferences.getInstance();
     if (remember) {
@@ -822,16 +1106,78 @@ class UstaadState extends ChangeNotifier {
     }
   }
 
-  Future<void> _rememberRequest(String problem) async {
+  Future<void> addToRecentRequests(String problemText, String location) async {
+    await _rememberRequest(problemText, location);
+    notifyListeners();
+  }
+
+  Future<void> _rememberRequest(String problem, String location) async {
     final trimmed = problem.trim();
     if (trimmed.isEmpty) return;
+    final label = _suggestionLabel(trimmed, location);
+    final suggestion = SmartSuggestion(
+      label: label,
+      fullText: trimmed,
+      category: 'recent',
+      icon: Icons.history,
+    );
     final next = [
-      trimmed,
-      ...recentRequests
-          .where((item) => item.toLowerCase() != trimmed.toLowerCase()),
-    ].take(6).toList();
+      suggestion,
+      ...recentRequests.where(
+        (item) => item.fullText.toLowerCase() != trimmed.toLowerCase(),
+      ),
+    ].take(3).toList();
     recentRequests = next;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('ustaad_recent_requests', next);
+    await prefs.setStringList(
+      'ustaad_recent_requests',
+      next.map((item) => item.fullText).toList(),
+    );
+  }
+
+  SmartSuggestion _suggestionFromStoredText(String value) {
+    return SmartSuggestion(
+      label: _suggestionLabel(value, lastLocation),
+      fullText: value,
+      category: 'recent',
+      icon: Icons.history,
+    );
+  }
+
+  String _suggestionLabel(String problem, String location) {
+    final intent = _inferIntent(problem, location);
+    final place = _sectorFromLocation(location);
+    return '${intent.role} - $place';
+  }
+
+  Future<void> _incrementBookingCount() async {
+    totalBookingsCount += 1;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('ustaad_total_bookings', totalBookingsCount);
+  }
+
+  void _checkAndUnlockAchievements() {
+    if (lastProblem.isNotEmpty) _unlockAchievement('first_request');
+    if (totalBookingsCount >= 1) _unlockAchievement('first_booking');
+    if (totalBookingsCount >= 3) _unlockAchievement('power_user');
+    final language = intent?.language;
+    if (language == 'Roman Urdu' || language == 'Urdu') {
+      _unlockAchievement('multilingual');
+    }
+  }
+
+  void _unlockAchievement(String id) {
+    final index = achievements.indexWhere((badge) => badge.id == id);
+    if (index == -1 || achievements[index].unlocked) return;
+    final unlocked = achievements[index].copyWith(
+      unlocked: true,
+      unlockedAt: DateTime.now(),
+    );
+    achievements = [
+      ...achievements.take(index),
+      unlocked,
+      ...achievements.skip(index + 1),
+    ];
+    newlyUnlockedBadges = [...newlyUnlockedBadges, unlocked];
   }
 }

@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'models.dart';
 import 'ustaad_state.dart';
@@ -67,6 +70,7 @@ class UstaadRouter extends StatelessWidget {
       UstaadScreen.profile => const ProfileScreen(),
       UstaadScreen.selection => const SelectionScreen(),
       UstaadScreen.workflow => const WorkflowScreen(),
+      UstaadScreen.aiChat => const AIChatScreen(),
     };
 
     return AnimatedSwitcher(
@@ -117,6 +121,8 @@ class _GatewayScreenState extends State<GatewayScreen> {
   final _joinEmail = TextEditingController();
   final _joinPhone = TextEditingController();
   final _joinPassword = TextEditingController();
+  final _recoveryPassword = TextEditingController();
+  final _recoveryConfirmPassword = TextEditingController();
 
   bool _creatingAccount = false;
   bool _remember = false;
@@ -144,12 +150,16 @@ class _GatewayScreenState extends State<GatewayScreen> {
     _joinEmail.dispose();
     _joinPhone.dispose();
     _joinPassword.dispose();
+    _recoveryPassword.dispose();
+    _recoveryConfirmPassword.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = _AuthPalette.of(context);
+    final recoveryActive = context
+        .select<UstaadState, bool>((state) => state.passwordRecoveryActive);
     return Scaffold(
       backgroundColor: colors.background,
       body: SafeArea(
@@ -191,16 +201,18 @@ class _GatewayScreenState extends State<GatewayScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              _AuthTabs(
-                                creatingAccount: _creatingAccount,
-                                onLogin: () => setState(
-                                  () => _creatingAccount = false,
+                              if (!recoveryActive) ...[
+                                _AuthTabs(
+                                  creatingAccount: _creatingAccount,
+                                  onLogin: () => setState(
+                                    () => _creatingAccount = false,
+                                  ),
+                                  onJoin: () => setState(
+                                    () => _creatingAccount = true,
+                                  ),
                                 ),
-                                onJoin: () => setState(
-                                  () => _creatingAccount = true,
-                                ),
-                              ),
-                              const SizedBox(height: 22),
+                                const SizedBox(height: 22),
+                              ],
                               AnimatedSize(
                                 duration: const Duration(milliseconds: 180),
                                 curve: Curves.easeOutCubic,
@@ -209,9 +221,11 @@ class _GatewayScreenState extends State<GatewayScreen> {
                                   duration: const Duration(milliseconds: 160),
                                   switchInCurve: Curves.easeOutCubic,
                                   switchOutCurve: Curves.easeInCubic,
-                                  child: _creatingAccount
-                                      ? _joinForm()
-                                      : _loginForm(),
+                                  child: recoveryActive
+                                      ? _passwordRecoveryForm()
+                                      : _creatingAccount
+                                          ? _joinForm()
+                                          : _loginForm(),
                                 ),
                               ),
                             ],
@@ -231,12 +245,20 @@ class _GatewayScreenState extends State<GatewayScreen> {
 
   Widget _loginForm() {
     final busy = context.watch<UstaadState>().authBusy;
+    final pendingEmail = context.watch<UstaadState>().pendingConfirmationEmail;
     final colors = _AuthPalette.of(context);
     final loginLocked = _loginLocked;
     return Column(
       key: const ValueKey('login'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (pendingEmail != null && pendingEmail.isNotEmpty) ...[
+          _EmailConfirmationNotice(
+            email: pendingEmail,
+            onResend: busy ? null : () => _resendConfirmation(pendingEmail),
+          ),
+          const SizedBox(height: 18),
+        ],
         _AuthTextField(
           controller: _loginEmail,
           label: 'Enter Email Address',
@@ -355,6 +377,53 @@ class _GatewayScreenState extends State<GatewayScreen> {
     );
   }
 
+  Widget _passwordRecoveryForm() {
+    final busy = context.watch<UstaadState>().authBusy;
+    final colors = _AuthPalette.of(context);
+    final strength = _passwordStrength(_recoveryPassword.text);
+    return Column(
+      key: const ValueKey('password-recovery'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SecurityInlineMessage(
+          icon: Icons.verified_user_outlined,
+          text:
+              'Recovery link verified. Choose a new password for your account.',
+        ),
+        const SizedBox(height: 22),
+        _AuthPasswordField(
+          controller: _recoveryPassword,
+          label: 'New Password',
+          obscure: _obscure,
+          onToggle: () => setState(() => _obscure = !_obscure),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 10),
+        _PasswordStrengthMeter(strength: strength),
+        const SizedBox(height: 22),
+        _AuthPasswordField(
+          controller: _recoveryConfirmPassword,
+          label: 'Confirm Password',
+          obscure: _obscure,
+          onToggle: () => setState(() => _obscure = !_obscure),
+        ),
+        const SizedBox(height: 18),
+        _AuthButton(
+          onPressed: busy ? null : _submitPasswordRecovery,
+          child: busy
+              ? SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.fieldFill,
+                  ),
+                )
+              : const Text('Update password'),
+        ),
+      ],
+    );
+  }
+
   Future<void> _submitLogin() async {
     if (_loginLocked) {
       _show('Sign in is locked for $_loginCooldownLabel.');
@@ -415,8 +484,39 @@ class _GatewayScreenState extends State<GatewayScreen> {
           password: password,
           remember: _remember,
         );
-    if (!mounted || ok) return;
+    if (!mounted) return;
+    if (ok) {
+      _joinPassword.clear();
+      _loginEmail.text = email;
+      setState(() => _creatingAccount = false);
+      _show(context.read<UstaadState>().bannerMessage ??
+          'Check your email to confirm your account.');
+      return;
+    }
     _show(context.read<UstaadState>().bannerMessage ?? 'Signup failed.');
+  }
+
+  Future<void> _submitPasswordRecovery() async {
+    final password = _recoveryPassword.text.trim();
+    final confirm = _recoveryConfirmPassword.text.trim();
+    final strength = _passwordStrength(password);
+    if (!strength.acceptable) {
+      _show('Use 8+ chars with upper, lower, number, and symbol.');
+      return;
+    }
+    if (password != confirm) {
+      _show('Passwords do not match.');
+      return;
+    }
+    final state = context.read<UstaadState>();
+    final ok = await state.updatePassword(password);
+    if (!mounted) return;
+    if (!ok) {
+      _show(state.bannerMessage ?? 'Password update failed.');
+      return;
+    }
+    _recoveryPassword.clear();
+    _recoveryConfirmPassword.clear();
   }
 
   bool _validEmail(String value) {
@@ -465,6 +565,14 @@ class _GatewayScreenState extends State<GatewayScreen> {
     if (!mounted) return;
     _show(state.bannerMessage ??
         (ok ? 'Password reset email sent.' : 'Password reset failed.'));
+  }
+
+  Future<void> _resendConfirmation(String email) async {
+    final state = context.read<UstaadState>();
+    final ok = await state.resendConfirmationEmail(email);
+    if (!mounted) return;
+    _show(state.bannerMessage ??
+        (ok ? 'Confirmation email sent.' : 'Could not resend email.'));
   }
 
   bool get _loginLocked {
@@ -758,12 +866,14 @@ class _AuthPasswordField extends StatelessWidget {
     required this.controller,
     required this.obscure,
     required this.onToggle,
+    this.label = 'Enter Password',
     this.onChanged,
   });
 
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
+  final String label;
   final ValueChanged<String>? onChanged;
 
   @override
@@ -772,7 +882,7 @@ class _AuthPasswordField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _AuthFieldLabel('Enter Password'),
+        _AuthFieldLabel(label),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
@@ -899,6 +1009,75 @@ class _SecurityInlineMessage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _EmailConfirmationNotice extends StatelessWidget {
+  const _EmailConfirmationNotice({
+    required this.email,
+    required this.onResend,
+  });
+
+  final String email;
+  final VoidCallback? onResend;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _AuthPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.accent.withValues(alpha: 0.26)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.mark_email_unread_outlined,
+                  size: 18, color: colors.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Confirm your email',
+                  style: TextStyle(
+                    color: colors.text,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'We sent a confirmation link to $email. Open it, then sign in.',
+            style: TextStyle(
+              color: colors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: onResend,
+              style: TextButton.styleFrom(
+                foregroundColor: colors.accent,
+                padding: EdgeInsets.zero,
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              child: const Text('Resend confirmation'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1082,7 +1261,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             savedCount: state.savedProviderIds.length,
             recentRequests: state.recentRequests,
             onUseRecent: (request) {
-              _problem.text = request;
+              _problem.text = request.fullText;
               _analyze();
             },
           ),
@@ -1119,20 +1298,14 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
               labelText: 'Location',
               prefixIcon: const Icon(Icons.place),
               suffixIcon: IconButton(
-                tooltip: _trackingLocation
-                    ? 'Stop location tracking'
-                    : 'Track current location',
+                tooltip: 'Search or track location',
                 icon: _locating
                     ? const SizedBox.square(
                         dimension: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(
-                        _trackingLocation
-                            ? Icons.location_searching
-                            : Icons.my_location,
-                      ),
-                onPressed: _locating ? null : _toggleLocationTracking,
+                    : const Icon(Icons.travel_explore),
+                onPressed: _locating ? null : _showLocationSearch,
               ),
             ),
           ),
@@ -1353,6 +1526,119 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     context.read<UstaadState>().startAnalysis(problem, _location.text);
   }
 
+  Future<void> _showLocationSearch() async {
+    final query = TextEditingController(text: _location.text);
+    await context.read<UstaadState>().searchLocations(query.text);
+    if (!mounted) {
+      query.dispose();
+      return;
+    }
+
+    final selected = await showModalBottomSheet<LocationSuggestion>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              MediaQuery.viewInsetsOf(sheetContext).bottom + 16,
+            ),
+            child: StatefulBuilder(
+              builder: (context, setSheetState) {
+                final state = context.watch<UstaadState>();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Choose location',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: query,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Search Islamabad sectors',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: IconButton(
+                          tooltip: 'Search',
+                          icon: state.locationSearchBusy
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.arrow_forward),
+                          onPressed: state.locationSearchBusy
+                              ? null
+                              : () async {
+                                  await context
+                                      .read<UstaadState>()
+                                      .searchLocations(query.text);
+                                  setSheetState(() {});
+                                },
+                        ),
+                      ),
+                      onSubmitted: (_) async {
+                        await context
+                            .read<UstaadState>()
+                            .searchLocations(query.text);
+                        setSheetState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.my_location),
+                            title: const Text('Use live GPS'),
+                            subtitle: const Text('Read this device location'),
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              _toggleLocationTracking();
+                            },
+                          ),
+                          ...state.locationSuggestions.map((item) {
+                            return ListTile(
+                              leading: const Icon(Icons.place_outlined),
+                              title: Text(item.label),
+                              subtitle: Text(
+                                item.subtitle.isEmpty
+                                    ? item.locationText
+                                    : item.subtitle,
+                              ),
+                              onTap: () => Navigator.pop(sheetContext, item),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+    query.dispose();
+
+    if (selected == null || !mounted) return;
+    setState(() {
+      _location.text = selected.locationText;
+      _locationStatus = 'Location selected with OpenStreetMap search.';
+    });
+  }
+
   Future<void> _toggleLocationTracking() async {
     if (_trackingLocation) {
       await _stopLocationTracking();
@@ -1513,8 +1799,8 @@ class _HomeDashboard extends StatelessWidget {
 
   final List<BookingRecord> bookings;
   final int savedCount;
-  final List<String> recentRequests;
-  final ValueChanged<String> onUseRecent;
+  final List<SmartSuggestion> recentRequests;
+  final ValueChanged<SmartSuggestion> onUseRecent;
 
   @override
   Widget build(BuildContext context) {
@@ -1565,7 +1851,7 @@ class _HomeDashboard extends StatelessWidget {
                 return ActionChip(
                   avatar: const Icon(Icons.history, size: 16),
                   label: Text(
-                    request,
+                    request.label,
                     overflow: TextOverflow.ellipsis,
                   ),
                   onPressed: () => onUseRecent(request),
@@ -1718,8 +2004,15 @@ class _InlineEmpty extends StatelessWidget {
   }
 }
 
-class SelectionScreen extends StatelessWidget {
+class SelectionScreen extends StatefulWidget {
   const SelectionScreen({super.key});
+
+  @override
+  State<SelectionScreen> createState() => _SelectionScreenState();
+}
+
+class _SelectionScreenState extends State<SelectionScreen> {
+  bool _showMap = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1743,32 +2036,278 @@ class SelectionScreen extends StatelessWidget {
             showNav: true,
           ),
           const SizedBox(height: 16),
+          _ViewSwitcher(
+            showMap: _showMap,
+            onChanged: (value) => setState(() => _showMap = value),
+          ),
+          const SizedBox(height: 12),
           _IntentSummary(intent: intent),
           const SizedBox(height: 12),
           _QuotePanel(quote: quote),
           const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 760;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: state.rankedProviders.take(4).map((provider) {
-                  return SizedBox(
-                    width: wide
-                        ? (constraints.maxWidth - 12) / 2
-                        : constraints.maxWidth,
-                    child: _ProviderCard(
-                      provider: provider,
-                      best: provider == state.rankedProviders.first,
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
+          if (_showMap)
+            _OpenStreetMapPanel(providers: state.rankedProviders)
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 760;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: state.rankedProviders.take(4).map((provider) {
+                    return SizedBox(
+                      width: wide
+                          ? (constraints.maxWidth - 12) / 2
+                          : constraints.maxWidth,
+                      child: _ProviderCard(
+                        provider: provider,
+                        best: provider == state.rankedProviders.first,
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
           const SizedBox(height: 12),
           _TracePanel(events: state.workflowEvents),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViewSwitcher extends StatelessWidget {
+  const _ViewSwitcher({
+    required this.showMap,
+    required this.onChanged,
+  });
+
+  final bool showMap;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment(
+          value: false,
+          icon: Icon(Icons.list),
+          label: Text('List'),
+        ),
+        ButtonSegment(
+          value: true,
+          icon: Icon(Icons.map),
+          label: Text('Map'),
+        ),
+      ],
+      selected: {showMap},
+      onSelectionChanged: (values) => onChanged(values.first),
+    );
+  }
+}
+
+class _OpenStreetMapPanel extends StatelessWidget {
+  const _OpenStreetMapPanel({required this.providers});
+
+  final List<UstaadProviderProfile> providers;
+
+  @override
+  Widget build(BuildContext context) {
+    final best = providers.isEmpty ? null : providers.first;
+    final markers = providers
+        .where((provider) =>
+            provider.latitude != null && provider.longitude != null)
+        .map((provider) {
+      final recommended = best?.id == provider.id;
+      return Marker(
+        width: recommended ? 54 : 46,
+        height: recommended ? 54 : 46,
+        point: LatLng(provider.latitude!, provider.longitude!),
+        child: Tooltip(
+          message:
+              '${provider.name}\n${provider.role} - ${provider.distanceKm} km - ${provider.rating} rating',
+          child: _MapPin(provider: provider, recommended: recommended),
+        ),
+      );
+    }).toList();
+
+    if (markers.isEmpty) {
+      return const _InlineEmpty(
+        icon: Icons.map_outlined,
+        text: 'Map coordinates are not available for these providers yet.',
+      );
+    }
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _MapLegend(),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).width < 640 ? 360 : 430,
+              child: FlutterMap(
+                options: const MapOptions(
+                  initialCenter: LatLng(33.6938, 73.0652),
+                  initialZoom: 11.6,
+                  minZoom: 9,
+                  maxZoom: 17,
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.ustaad.service',
+                    retinaMode: RetinaMode.isHighDensity(context),
+                  ),
+                  MarkerLayer(markers: markers),
+                  const RichAttributionWidget(
+                    attributions: [
+                      TextSourceAttribution('OpenStreetMap contributors'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (best != null) ...[
+            const SizedBox(height: 12),
+            _MapRecommendedProvider(provider: best),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MapPin extends StatelessWidget {
+  const _MapPin({
+    required this.provider,
+    required this.recommended,
+  });
+
+  final UstaadProviderProfile provider;
+  final bool recommended;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        recommended ? Theme.of(context).colorScheme.primary : Colors.blueAccent;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.35),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+        border: Border.all(
+          color: Theme.of(context).colorScheme.surface,
+          width: 2,
+        ),
+      ),
+      child: Icon(
+        recommended ? Icons.star : Icons.handyman,
+        color: recommended
+            ? Theme.of(context).colorScheme.onPrimary
+            : Colors.white,
+        size: recommended ? 24 : 20,
+      ),
+    );
+  }
+}
+
+class _MapLegend extends StatelessWidget {
+  const _MapLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      children: const [
+        _LegendItem(color: Colors.lightGreenAccent, label: 'Best match'),
+        _LegendItem(color: Colors.blueAccent, label: 'Available'),
+        _LegendItem(color: Colors.orangeAccent, label: 'Nearby sectors'),
+      ],
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  const _LegendItem({
+    required this.color,
+    required this.label,
+  });
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+class _MapRecommendedProvider extends StatelessWidget {
+  const _MapRecommendedProvider({required this.provider});
+
+  final UstaadProviderProfile provider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          _Avatar(url: provider.avatarUrl, size: 48),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  provider.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  '${provider.role} - ${provider.distanceKm} km - Rs. ${provider.price}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: () => context.read<UstaadState>().bookProvider(provider),
+            icon: const Icon(Icons.calendar_month),
+            label: const Text('Book'),
+          ),
         ],
       ),
     );
@@ -1898,6 +2437,87 @@ class WorkflowScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class AIChatScreen extends StatefulWidget {
+  const AIChatScreen({super.key});
+
+  @override
+  State<AIChatScreen> createState() => _AIChatScreenState();
+}
+
+class _AIChatScreenState extends State<AIChatScreen> {
+  final _input = TextEditingController();
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _Stage(
+      wideMaxWidth: 760,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _AppBarLine(
+            title: 'Ustaad AI',
+            subtitle: 'Multilingual booking assistant',
+            leading: IconButton(
+              tooltip: 'Back',
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => context.read<UstaadState>().openHome(),
+            ),
+            showNav: true,
+          ),
+          const SizedBox(height: 16),
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _StatusTile(
+                  icon: Icons.smart_toy,
+                  title: 'Assalamu Alaikum',
+                  subtitle:
+                      'Describe the service you need in English, Urdu, or Roman Urdu.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _input,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Message',
+                    hintText: 'Mujhe plumber chahiye G-13 mein',
+                    prefixIcon: Icon(Icons.chat),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _send,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Find providers'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _send() {
+    final text = _input.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Type a service request first.')),
+      );
+      return;
+    }
+    context.read<UstaadState>().startAnalysis(text, 'G-13, Islamabad');
   }
 }
 
@@ -3111,44 +3731,86 @@ class _ContactBar extends StatelessWidget {
           icon: Icons.phone,
           label: phone.isEmpty ? 'Phone pending' : phone,
           value: phone,
+          type: _ContactType.phone,
         ),
         _ContactChip(
           icon: Icons.chat,
           label: whatsapp.isEmpty ? 'WhatsApp pending' : whatsapp,
           value: whatsapp,
+          type: _ContactType.whatsapp,
         ),
       ],
     );
   }
 }
 
+enum _ContactType { phone, whatsapp }
+
 class _ContactChip extends StatelessWidget {
   const _ContactChip({
     required this.icon,
     required this.label,
     required this.value,
+    required this.type,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final _ContactType type;
 
   @override
   Widget build(BuildContext context) {
     return ActionChip(
       avatar: Icon(icon, size: 16),
       label: Text(label),
-      onPressed: value.isEmpty
-          ? null
-          : () async {
-              await Clipboard.setData(ClipboardData(text: value));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Contact copied.')),
-                );
-              }
-            },
+      onPressed: value.isEmpty ? null : () => _showContactActions(context),
     );
+  }
+
+  Future<void> _showContactActions(BuildContext context) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading:
+                    Icon(type == _ContactType.phone ? Icons.phone : Icons.chat),
+                title: Text(type == _ContactType.phone
+                    ? 'Call provider'
+                    : 'Open WhatsApp'),
+                onTap: () => Navigator.pop(context, 'open'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy),
+                title: const Text('Copy contact'),
+                onTap: () => Navigator.pop(context, 'copy'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (action == null) return;
+
+    if (action == 'copy') {
+      await Clipboard.setData(ClipboardData(text: value));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contact copied.')),
+        );
+      }
+      return;
+    }
+
+    final clean = value.replaceAll(RegExp(r'[^0-9+]'), '');
+    final uri = type == _ContactType.phone
+        ? Uri(scheme: 'tel', path: clean)
+        : Uri.parse('https://wa.me/${clean.replaceAll('+', '')}');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 

@@ -16,10 +16,25 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>Ustaad</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.ustaad.service.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.ustaad.service</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Ustaad uses your selected photo as your profile picture.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Ustaad uses your location to find nearby service providers and estimate booking availability.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ustaad uses the microphone so you can speak service requests.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Ustaad uses on-device speech recognition to turn spoken requests into text.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
