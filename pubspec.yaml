@@ -20,8 +20,11 @@ dependencies:
   provider: ^6.1.5+1
   shared_preferences: ^2.5.5
   speech_to_text: ^7.3.0
-  supabase_flutter: ^2.12.4
   url_launcher: ^6.3.2
+  firebase_core: ^4.11.0
+  firebase_auth: ^6.5.4
+  cloud_firestore: ^6.6.0
+  firebase_storage: ^13.4.3
 
 dev_dependencies:
   flutter_test:

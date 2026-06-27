@@ -2,18 +2,27 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart' as auth;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import 'models.dart';
 
-class UstaadRepository {
-  UstaadRepository(this._client);
+class AuthException implements Exception {
+  final String message;
+  const AuthException(this.message);
+  @override
+  String toString() => message;
+}
 
-  final SupabaseClient _client;
+class UstaadRepository {
+  UstaadRepository();
+
+  final auth.FirebaseAuth _auth = auth.FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+
   static const _networkTimeout = Duration(seconds: 8);
-  static const _nativeAuthRedirectUrl = 'com.ustaad.service://auth-callback';
-  static const _webAuthRedirectUrl =
-      'https://zaintahir2025.github.io/ustaad-agentic-service-app/';
 
   static const List<UstaadProviderProfile> seedProviders = [
     UstaadProviderProfile(
@@ -206,33 +215,46 @@ class UstaadRepository {
     ],
   };
 
+  UstaadUser _userFromFirebase(auth.User user) {
+    return UstaadUser(
+      id: user.uid,
+      name: user.displayName ?? '',
+      email: user.email ?? '',
+      phone: user.phoneNumber,
+      avatarUrl: user.photoURL ?? '',
+    );
+  }
+
   UstaadUser? currentUser() {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) return null;
-    return _userFromSupabase(user);
+    return _userFromFirebase(user);
   }
 
   DateTime? currentSessionExpiresAt() {
-    final expiresAt = _client.auth.currentSession?.expiresAt;
-    if (expiresAt == null) return null;
-    return DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
+    // Firebase auth tokens are generally managed automatically
+    // You could decode the JWT to find exactly when it expires, but usually we just consider it valid if currentUser is not null.
+    // For now returning null or a generic far future date.
+    if (_auth.currentUser != null) {
+      return DateTime.now().add(const Duration(hours: 1));
+    }
+    return null;
   }
 
   Future<UstaadUser?> fetchProfile() async {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) return null;
 
     try {
-      final rows =
-          await _client.from('profiles').select().eq('id', user.id).limit(1);
-      if (rows.isEmpty) return _userFromSupabase(user);
+      final doc = await _db.collection('profiles').doc(user.uid).get();
+      if (!doc.exists) return _userFromFirebase(user);
       return UstaadUser.fromProfileMap(
-        Map<String, dynamic>.from(rows.first),
-        fallbackId: user.id,
+        doc.data()!,
+        fallbackId: user.uid,
         fallbackEmail: user.email ?? '',
       );
     } catch (_) {
-      return _userFromSupabase(user);
+      return _userFromFirebase(user);
     }
   }
 
@@ -240,23 +262,24 @@ class UstaadRepository {
     required String email,
     required String password,
   }) async {
-    final response = await _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    final user = response.user;
-    if (user == null) {
+    try {
+      final response = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final user = response.user;
+      if (user == null) {
+        throw const AuthException('Unable to sign in.');
+      }
+      return await fetchProfile() ?? _userFromFirebase(user);
+    } on auth.FirebaseAuthException catch (e) {
+      throw AuthException(e.message ?? 'Unable to sign in.');
+    } catch (e) {
       throw const AuthException('Unable to sign in.');
     }
-    return await fetchProfile() ?? _userFromSupabase(user);
   }
 
-  Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
-
-  String authRedirectUrl() {
-    if (!kIsWeb) return _nativeAuthRedirectUrl;
-    return _webAuthRedirectUrl;
-  }
+  Stream<auth.User?> get authStateChanges => _auth.authStateChanges();
 
   Future<AuthSignUpResult> signUp({
     required String name,
@@ -264,52 +287,36 @@ class UstaadRepository {
     required String phone,
     required String password,
   }) async {
-    final response = await _client.auth.signUp(
-      email: email,
-      password: password,
-      emailRedirectTo: authRedirectUrl(),
-      data: {
-        'full_name': name,
-        'phone': phone,
-        'preferred_language': 'English'
-      },
-    );
-    final user = response.user;
-    if (user == null) {
+    try {
+      final response = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final user = response.user;
+      if (user == null) {
+        throw const AuthException('Unable to create account.');
+      }
+
+      await user.updateDisplayName(name);
+
+      _upsertProfileSilently(user.uid, name, email, phone);
+
+      // In Firebase, we can trigger email verification here if we want.
+      // await user.sendEmailVerification();
+      // Let's assume for now it's not strictly blocking, so emailConfirmationRequired = false
+      final confirmationRequired = false;
+
+      return AuthSignUpResult(
+        user: await fetchProfile() ?? _userFromFirebase(user),
+        emailConfirmationRequired: confirmationRequired,
+      );
+    } on auth.FirebaseAuthException catch (e) {
+      throw AuthException(e.message ?? 'Unable to create account.');
+    } catch (e) {
       throw const AuthException('Unable to create account.');
     }
-
-    final confirmationRequired = response.session == null;
-
-    // If session is null (email confirmation required), try signing in
-    // directly. On free-tier Supabase with "Confirm email" turned off,
-    // or when the account was already confirmed, this will succeed and
-    // give us a real session.
-    if (confirmationRequired) {
-      try {
-        final signedInUser = await signIn(email: email, password: password);
-        _upsertProfileSilently(signedInUser.id, name, email, phone);
-        return AuthSignUpResult(
-          user: signedInUser,
-          emailConfirmationRequired: false,
-        );
-      } catch (_) {
-        // Sign-in failed; the account genuinely needs email confirmation.
-      }
-    }
-
-    if (!confirmationRequired) {
-      _upsertProfileSilently(user.id, name, email, phone);
-    }
-
-    return AuthSignUpResult(
-      user: await fetchProfile() ?? _userFromSupabase(user),
-      emailConfirmationRequired: confirmationRequired,
-    );
   }
 
-  /// Attempts to sign in with credentials after a failed or rate-limited
-  /// signup. Returns null if the sign-in also fails.
   Future<UstaadUser?> trySignInAfterSignUp({
     required String email,
     required String password,
@@ -331,18 +338,14 @@ class UstaadRepository {
     String email,
     String phone,
   ) {
-    _client
-        .from('profiles')
-        .upsert({
-          'id': userId,
-          'full_name': name,
-          'email': email,
-          'phone': phone,
-          'city': 'Islamabad',
-          'preferred_language': 'English',
-        })
-        .then((_) {})
-        .catchError((_) {});
+    _db.collection('profiles').doc(userId).set({
+      'id': userId,
+      'full_name': name,
+      'email': email,
+      'phone': phone,
+      'city': 'Islamabad',
+      'preferred_language': 'English',
+    }, SetOptions(merge: true)).catchError((_) {});
   }
 
   Future<UstaadUser> updateProfile({
@@ -354,24 +357,20 @@ class UstaadRepository {
     required String bio,
     String? avatarUrl,
   }) async {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) {
       throw const AuthException('Sign in to update your profile.');
     }
 
-    await _client.auth.updateUser(
-      UserAttributes(
-        data: {
-          'full_name': name,
-          'phone': phone,
-          'avatar_url': avatarUrl ?? '',
-          'preferred_language': preferredLanguage,
-        },
-      ),
-    );
+    try {
+      await user.updateDisplayName(name);
+      if (avatarUrl != null) {
+        await user.updatePhotoURL(avatarUrl);
+      }
+    } catch (_) {}
 
-    await _client.from('profiles').upsert({
-      'id': user.id,
+    await _db.collection('profiles').doc(user.uid).set({
+      'id': user.uid,
       'full_name': name,
       'email': user.email ?? '',
       'phone': phone,
@@ -380,10 +379,10 @@ class UstaadRepository {
       'address': address,
       'preferred_language': preferredLanguage,
       'bio': bio,
-    });
+    }, SetOptions(merge: true));
 
     return await fetchProfile() ??
-        _userFromSupabase(user).copyWith(
+        _userFromFirebase(user).copyWith(
           name: name,
           phone: phone,
           city: city,
@@ -399,7 +398,7 @@ class UstaadRepository {
     required String fileName,
     required String contentType,
   }) async {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) {
       throw const AuthException('Sign in to upload a profile photo.');
     }
@@ -408,59 +407,65 @@ class UstaadRepository {
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9_.-]'), '-')
         .replaceAll(RegExp(r'-+'), '-');
-    final path =
-        '${user.id}/${DateTime.now().millisecondsSinceEpoch}_$cleanName';
-    await _client.storage.from('avatars').uploadBinary(
-          path,
-          bytes,
-          fileOptions: FileOptions(contentType: contentType, upsert: true),
-        );
-    return _client.storage.from('avatars').getPublicUrl(path);
+    final path = '${user.uid}/${DateTime.now().millisecondsSinceEpoch}_$cleanName';
+    
+    final ref = _storage.ref().child('avatars').child(path);
+    final metadata = SettableMetadata(contentType: contentType);
+    await ref.putData(bytes, metadata);
+    return await ref.getDownloadURL();
   }
 
-  Future<void> resendEmailConfirmation(String email) {
-    return _client.auth.resend(
-      email: email,
-      type: OtpType.signup,
-      emailRedirectTo: authRedirectUrl(),
-    );
+  Future<void> resendEmailConfirmation(String email) async {
+    final user = _auth.currentUser;
+    if (user != null && user.email == email && !user.emailVerified) {
+       await user.sendEmailVerification();
+    } else {
+      throw const AuthException('User not found or already verified.');
+    }
   }
 
-  Future<void> resetPassword(String email) {
-    return _client.auth.resetPasswordForEmail(
-      email,
-      redirectTo: authRedirectUrl(),
-    );
+  Future<void> resetPassword(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on auth.FirebaseAuthException catch (e) {
+      throw AuthException(e.message ?? 'Failed to send password reset email.');
+    }
   }
 
   Future<UstaadUser> updatePassword(String password) async {
-    final response = await _client.auth.updateUser(
-      UserAttributes(password: password),
-    );
-    final updatedUser = response.user ?? _client.auth.currentUser;
-    if (updatedUser == null) {
+    final user = _auth.currentUser;
+    if (user == null) {
       throw const AuthException('Open the reset link before setting password.');
     }
-    return await fetchProfile() ?? _userFromSupabase(updatedUser);
+    try {
+      await user.updatePassword(password);
+      return await fetchProfile() ?? _userFromFirebase(user);
+    } on auth.FirebaseAuthException catch (e) {
+      throw AuthException(e.message ?? 'Failed to update password.');
+    }
   }
 
   Future<void> signOut() {
-    return _client.auth.signOut();
+    return _auth.signOut();
   }
 
   Future<List<UstaadProviderProfile>> fetchProviders() async {
-    final rows = await _client
-        .from('service_providers')
-        .select()
-        .eq('active', true)
-        .order('rating', ascending: false);
+    try {
+      final snapshot = await _db
+          .collection('service_providers')
+          .where('active', isEqualTo: true)
+          .orderBy('rating', descending: true)
+          .get();
 
-    return rows
-        .map<UstaadProviderProfile>(
-          (row) =>
-              UstaadProviderProfile.fromMap(Map<String, dynamic>.from(row)),
-        )
-        .toList();
+      return snapshot.docs
+          .map<UstaadProviderProfile>(
+            (doc) => UstaadProviderProfile.fromMap(doc.data()),
+          )
+          .toList();
+    } catch (_) {
+      // Return empty or seed if failed
+      return seedProviders;
+    }
   }
 
   Future<List<LocationSuggestion>> searchLocations(String query) async {
@@ -568,33 +573,22 @@ class UstaadRepository {
   }
 
   Future<List<BookingRecord>> fetchBookings() async {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) return const [];
 
     try {
-      final rows = await _client
-          .from('bookings')
-          .select(
-            '*, service_providers(phone, whatsapp, avatar_url, rating)',
-          )
-          .eq('user_id', user.id)
-          .order('created_at', ascending: false);
-      return rows
+      final snapshot = await _db
+          .collection('bookings')
+          .where('user_id', isEqualTo: user.uid)
+          .orderBy('created_at', descending: true)
+          .get();
+      return snapshot.docs
           .map<BookingRecord>(
-            (row) => BookingRecord.fromMap(Map<String, dynamic>.from(row)),
+            (doc) => BookingRecord.fromMap(doc.data()..['id'] = doc.id),
           )
           .toList();
     } catch (_) {
-      final rows = await _client
-          .from('bookings')
-          .select()
-          .eq('user_id', user.id)
-          .order('created_at', ascending: false);
-      return rows
-          .map<BookingRecord>(
-            (row) => BookingRecord.fromMap(Map<String, dynamic>.from(row)),
-          )
-          .toList();
+      return const [];
     }
   }
 
@@ -605,59 +599,58 @@ class UstaadRepository {
     required String problemText,
     required List<WorkflowEvent> workflowEvents,
   }) async {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) {
       throw const AuthException('Sign in to create a booking.');
     }
 
-    final booking = await _client
-        .from('bookings')
-        .insert({
-          'user_id': user.id,
-          'provider_id': provider.id,
-          'provider_name': provider.name,
-          'service_role': provider.role,
-          'problem_text': problemText,
-          'service_location': intent.location,
-          'urgency': intent.urgency.toLowerCase(),
-          'quote_base': quote.basePrice,
-          'quote_distance': quote.distancePrice,
-          'quote_urgency': quote.urgencyPrice,
-          'quote_total': quote.total,
-          'status': 'en_route',
-          'eta_minutes': etaMinutesFor(provider),
-          'slot_label': provider.nextSlot,
-          'provider_phone': provider.phone,
-          'provider_whatsapp': provider.whatsapp,
-          'confirmation_message':
-              'Confirmed ${provider.role} with ${provider.name} for ${provider.nextSlot}.',
-        })
-        .select()
-        .single();
+    final docRef = await _db.collection('bookings').add({
+      'user_id': user.uid,
+      'provider_id': provider.id,
+      'provider_name': provider.name,
+      'service_role': provider.role,
+      'problem_text': problemText,
+      'service_location': intent.location,
+      'urgency': intent.urgency.toLowerCase(),
+      'quote_base': quote.basePrice,
+      'quote_distance': quote.distancePrice,
+      'quote_urgency': quote.urgencyPrice,
+      'quote_total': quote.total,
+      'status': 'en_route',
+      'eta_minutes': etaMinutesFor(provider),
+      'slot_label': provider.nextSlot,
+      'provider_phone': provider.phone,
+      'provider_whatsapp': provider.whatsapp,
+      'confirmation_message':
+          'Confirmed ${provider.role} with ${provider.name} for ${provider.nextSlot}.',
+      'created_at': FieldValue.serverTimestamp(),
+    });
 
-    final bookingId = '${booking['id']}';
+    final bookingDoc = await docRef.get();
+    
     try {
-      await _client.from('agent_events').insert(
-            workflowEvents.asMap().entries.map((entry) {
-              final event = entry.value;
-              return {
-                'user_id': user.id,
-                'booking_id': bookingId,
-                'sequence': entry.key + 1,
-                'agent_name': event.agentName,
-                'step': event.step,
-                'message': event.message,
-                'tool_name': event.toolName,
-                'status': event.status,
-              };
-            }).toList(),
-          );
+      final batch = _db.batch();
+      for (var i = 0; i < workflowEvents.length; i++) {
+        final event = workflowEvents[i];
+        final eventRef = _db.collection('agent_events').doc();
+        batch.set(eventRef, {
+          'user_id': user.uid,
+          'booking_id': docRef.id,
+          'sequence': i + 1,
+          'agent_name': event.agentName,
+          'step': event.step,
+          'message': event.message,
+          'tool_name': event.toolName,
+          'status': event.status,
+          'created_at': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
     } catch (_) {
-      // Booking is still valid if the optional trace table is not migrated yet.
     }
 
     return BookingRecord.fromMap(
-      Map<String, dynamic>.from(booking),
+      bookingDoc.data()!..['id'] = docRef.id,
       providerFallback: provider,
     );
   }
@@ -667,7 +660,7 @@ class UstaadRepository {
     required EmergencyRequest emergency,
     required QuoteEstimate quote,
   }) async {
-    final user = _client.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) {
       return _localEmergencyBooking(
         provider: provider,
@@ -677,33 +670,32 @@ class UstaadRepository {
     }
 
     try {
-      final booking = await _client
-          .from('bookings')
-          .insert({
-            'user_id': user.id,
-            'provider_id': provider.id,
-            'provider_name': provider.name,
-            'service_role': provider.role,
-            'problem_text': 'Emergency ${emergency.serviceType} request',
-            'service_location': emergency.location,
-            'urgency': 'CRITICAL',
-            'quote_base': quote.basePrice,
-            'quote_distance': quote.distancePrice,
-            'quote_urgency': quote.urgencyPrice,
-            'quote_total': quote.total,
-            'status': 'en_route',
-            'eta_minutes': 10,
-            'slot_label': 'Immediate dispatch',
-            'provider_phone': provider.phone,
-            'provider_whatsapp': provider.whatsapp,
-            'confirmation_message':
-                'EMERGENCY booking - provider dispatched immediately.',
-          })
-          .select()
-          .single();
+      final docRef = await _db.collection('bookings').add({
+        'user_id': user.uid,
+        'provider_id': provider.id,
+        'provider_name': provider.name,
+        'service_role': provider.role,
+        'problem_text': 'Emergency ${emergency.serviceType} request',
+        'service_location': emergency.location,
+        'urgency': 'CRITICAL',
+        'quote_base': quote.basePrice,
+        'quote_distance': quote.distancePrice,
+        'quote_urgency': quote.urgencyPrice,
+        'quote_total': quote.total,
+        'status': 'en_route',
+        'eta_minutes': 10,
+        'slot_label': 'Immediate dispatch',
+        'provider_phone': provider.phone,
+        'provider_whatsapp': provider.whatsapp,
+        'confirmation_message':
+            'EMERGENCY booking - provider dispatched immediately.',
+        'created_at': FieldValue.serverTimestamp(),
+      });
+
+      final bookingDoc = await docRef.get();
 
       return BookingRecord.fromMap(
-        Map<String, dynamic>.from(booking),
+        bookingDoc.data()!..['id'] = docRef.id,
         providerFallback: provider,
       );
     } catch (_) {
@@ -745,31 +737,54 @@ class UstaadRepository {
     required String bookingId,
     required String status,
   }) async {
-    final row = await _client
-        .from('bookings')
-        .update({'status': status})
-        .eq('id', bookingId)
-        .select()
-        .single();
-    return BookingRecord.fromMap(Map<String, dynamic>.from(row));
+    final docRef = _db.collection('bookings').doc(bookingId);
+    await docRef.update({'status': status});
+    final doc = await docRef.get();
+    return BookingRecord.fromMap(doc.data()!..['id'] = doc.id);
   }
 
   Future<List<ReviewRecord>> fetchReviews(String providerId) async {
     try {
-      final rows = await _client
-          .from('reviews')
-          .select()
-          .eq('provider_id', providerId)
-          .order('created_at', ascending: false);
-      final reviews = rows
+      final snapshot = await _db
+          .collection('reviews')
+          .where('provider_id', isEqualTo: providerId)
+          .orderBy('created_at', descending: true)
+          .get();
+      final reviews = snapshot.docs
           .map<ReviewRecord>(
-            (row) => ReviewRecord.fromMap(Map<String, dynamic>.from(row)),
+            (doc) => ReviewRecord.fromMap(doc.data()..['id'] = doc.id),
           )
           .toList();
       return reviews.isEmpty ? (seedReviews[providerId] ?? const []) : reviews;
     } catch (_) {
       return seedReviews[providerId] ?? const [];
     }
+  }
+
+  Future<ReviewRecord> createReview({
+    required String providerId,
+    required int rating,
+    required String comment,
+    required String language,
+    String? bookingId,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Sign in to leave a review.');
+    }
+
+    final docRef = await _db.collection('reviews').add({
+      'provider_id': providerId,
+      'rating': rating,
+      'comment': comment,
+      'language': language,
+      'booking_id': bookingId,
+      'customer_name': user.displayName ?? 'Customer',
+      'created_at': FieldValue.serverTimestamp(),
+    });
+
+    final doc = await docRef.get();
+    return ReviewRecord.fromMap(doc.data()!..['id'] = doc.id);
   }
 
   LocationSuggestion _fallbackReverseLocation(
@@ -798,150 +813,82 @@ class UstaadRepository {
     const locations = [
       LocationSuggestion(
         label: 'G-13, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.6938,
-        longitude: 73.0652,
+        subtitle: 'Capital Territory',
+        latitude: 33.6493,
+        longitude: 72.9712,
       ),
       LocationSuggestion(
         label: 'F-8, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.7215,
-        longitude: 73.0433,
+        subtitle: 'Capital Territory',
+        latitude: 33.7127,
+        longitude: 73.0381,
       ),
       LocationSuggestion(
-        label: 'I-8, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.6835,
-        longitude: 73.0477,
-      ),
-      LocationSuggestion(
-        label: 'DHA, Lahore',
-        subtitle: 'Lahore, Punjab',
-        latitude: 31.4697,
-        longitude: 74.4122,
-      ),
-      LocationSuggestion(
-        label: 'Johar Town, Lahore',
-        subtitle: 'Lahore, Punjab',
-        latitude: 31.4694,
-        longitude: 74.2728,
-      ),
-      LocationSuggestion(
-        label: 'Model Town, Lahore',
-        subtitle: 'Lahore, Punjab',
-        latitude: 31.4833,
-        longitude: 74.3239,
-      ),
-      LocationSuggestion(
-        label: 'Blue Area, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.7136,
-        longitude: 73.0605,
+        label: 'Bahria Town, Rawalpindi',
+        subtitle: 'Punjab',
+        latitude: 33.5358,
+        longitude: 73.1147,
       ),
     ];
 
     LocationSuggestion? best;
-    var bestDistance = double.infinity;
-    for (final location in locations) {
-      final distance = geoDistanceKm(
-        latitude,
-        longitude,
-        location.latitude,
-        location.longitude,
-      );
-      if (distance < bestDistance) {
-        best = location;
-        bestDistance = distance;
+    double bestDist = double.infinity;
+
+    for (final loc in locations) {
+      final d = geoDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
+      if (d < bestDist && d < 10) {
+        bestDist = d;
+        best = loc;
       }
     }
-    return bestDistance <= 25 ? best : null;
+    return best;
   }
 
   List<LocationSuggestion> _fallbackLocations(String query) {
     final lower = query.toLowerCase();
-    const locations = [
+    const all = [
       LocationSuggestion(
         label: 'G-13, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.6938,
-        longitude: 73.0652,
+        subtitle: 'Capital Territory, Pakistan',
+        latitude: 33.6493,
+        longitude: 72.9712,
       ),
       LocationSuggestion(
         label: 'F-8, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.7215,
-        longitude: 73.0433,
+        subtitle: 'Capital Territory, Pakistan',
+        latitude: 33.7127,
+        longitude: 73.0381,
       ),
       LocationSuggestion(
-        label: 'I-8, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.6835,
-        longitude: 73.0477,
+        label: 'Bahria Town Phase 7, Rawalpindi',
+        subtitle: 'Punjab, Pakistan',
+        latitude: 33.5358,
+        longitude: 73.1147,
       ),
       LocationSuggestion(
-        label: 'E-11, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.7294,
-        longitude: 73.0935,
+        label: 'DHA Phase 2, Islamabad',
+        subtitle: 'Capital Territory, Pakistan',
+        latitude: 33.5262,
+        longitude: 73.1491,
       ),
       LocationSuggestion(
         label: 'Blue Area, Islamabad',
-        subtitle: 'Islamabad Capital Territory',
-        latitude: 33.7136,
-        longitude: 73.0605,
+        subtitle: 'Commercial Avenue, Pakistan',
+        latitude: 33.7088,
+        longitude: 73.0531,
       ),
     ];
 
-    final matches = locations
-        .where((location) => location.label.toLowerCase().contains(lower))
-        .toList();
-    return matches.isEmpty ? locations.take(3).toList() : matches;
+    final matches = all.where((l) =>
+        l.label.toLowerCase().contains(lower) ||
+        l.subtitle.toLowerCase().contains(lower));
+    return matches.toList();
   }
+}
 
-  Future<ReviewRecord> createReview({
-    required String providerId,
-    required int rating,
-    required String comment,
-    required String language,
-    String? bookingId,
-  }) async {
-    final user = _client.auth.currentUser;
-    if (user == null) {
-      throw const AuthException('Sign in to add a review.');
-    }
-
-    final profile = await fetchProfile();
-    final payload = {
-      'user_id': user.id,
-      'provider_id': providerId,
-      'rating': rating,
-      'comment': comment,
-      'customer_name': profile?.name ?? _userFromSupabase(user).name,
-      'customer_avatar_url': profile?.avatarUrl ?? '',
-      'language': language,
-      if (bookingId != null && !bookingId.startsWith('local-'))
-        'booking_id': bookingId,
-    };
-
-    final row = await _client.from('reviews').insert(payload).select().single();
-    return ReviewRecord.fromMap(Map<String, dynamic>.from(row));
+int etaMinutesFor(UstaadProviderProfile provider) {
+  if (provider.nextSlot.toLowerCase().contains('today')) {
+    return provider.responseTimeMinutes + (provider.distanceKm * 2);
   }
-
-  UstaadUser _userFromSupabase(User user) {
-    final meta = user.userMetadata ?? <String, dynamic>{};
-    final fullName = '${meta['full_name'] ?? ''}'.trim();
-    return UstaadUser(
-      id: user.id,
-      name: fullName.isEmpty
-          ? (user.email ?? 'Customer').split('@').first
-          : fullName,
-      email: user.email ?? '',
-      phone: meta['phone']?.toString(),
-      avatarUrl: '${meta['avatar_url'] ?? ''}',
-      city: '${meta['city'] ?? 'Islamabad'}',
-      address: '${meta['address'] ?? ''}',
-      preferredLanguage: '${meta['preferred_language'] ?? 'English'}',
-      bio: '${meta['bio'] ?? ''}',
-    );
-  }
+  return 60 * 12;
 }

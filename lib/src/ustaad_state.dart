@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart' as auth;
 
 import 'models.dart';
 import 'ustaad_repository.dart';
@@ -15,7 +15,7 @@ class UstaadState extends ChangeNotifier {
   }
 
   final UstaadRepository _repository;
-  late final StreamSubscription<AuthState> _authSubscription;
+  late final StreamSubscription<auth.User?> _authSubscription;
 
   bool bootstrapped = false;
   bool backendOnline = false;
@@ -106,41 +106,26 @@ class UstaadState extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> _handleAuthChange(AuthState authState) async {
-    final event = authState.event;
-    if (event == AuthChangeEvent.passwordRecovery) {
-      passwordRecoveryActive = true;
-      screen = UstaadScreen.gateway;
-      user = _repository.currentUser();
-      sessionExpiresAt = _repository.currentSessionExpiresAt();
-      bannerMessage = 'Reset link verified. Set a new password.';
-      notifyListeners();
-      return;
-    }
-
-    if (event == AuthChangeEvent.signedIn ||
-        event == AuthChangeEvent.tokenRefreshed ||
-        event == AuthChangeEvent.userUpdated) {
-      final current = _repository.currentUser();
-      if (current == null) return;
-      user = await _repository.fetchProfile() ?? current;
-      sessionExpiresAt = _repository.currentSessionExpiresAt();
-      pendingConfirmationEmail = null;
-      if (!passwordRecoveryActive) {
-        screen = UstaadScreen.commandCenter;
-        await refreshBookings(silent: true);
-      }
-      notifyListeners();
-      return;
-    }
-
-    if (event == AuthChangeEvent.signedOut) {
+  Future<void> _handleAuthChange(auth.User? firebaseUser) async {
+    if (firebaseUser == null) {
       user = null;
       sessionExpiresAt = null;
       passwordRecoveryActive = false;
       screen = UstaadScreen.gateway;
       notifyListeners();
+      return;
     }
+
+    final current = _repository.currentUser();
+    if (current == null) return;
+    user = await _repository.fetchProfile() ?? current;
+    sessionExpiresAt = _repository.currentSessionExpiresAt();
+    pendingConfirmationEmail = null;
+    if (!passwordRecoveryActive) {
+      screen = UstaadScreen.commandCenter;
+      await refreshBookings(silent: true);
+    }
+    notifyListeners();
   }
 
   Future<void> toggleTheme() async {

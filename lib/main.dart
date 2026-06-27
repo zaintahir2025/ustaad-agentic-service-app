@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import 'src/app_theme.dart';
 import 'src/ustaad_state.dart';
 import 'src/ustaad_repository.dart';
 import 'src/ustaad_ui.dart';
-
-const String supabaseUrl = 'https://dcsioxiiyazchampqulz.supabase.co';
-const String supabasePublishableKey =
-    'sb_publishable_d4p1s2x8fkzBdkYi9a6dsA_vYdWF30G';
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,9 +25,8 @@ class _UstaadBootstrapAppState extends State<UstaadBootstrapApp> {
   late Future<void> _startup = _initialize();
 
   Future<void> _initialize() {
-    return Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabasePublishableKey,
+    return Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(const Duration(seconds: 12));
   }
 
@@ -57,10 +53,10 @@ class _UstaadBootstrapAppState extends State<UstaadBootstrapApp> {
 
         return ChangeNotifierProvider(
           create: (_) => UstaadState(
-            UstaadRepository(Supabase.instance.client),
+            UstaadRepository(),
           )..bootstrap(),
           child: const UstaadApp(),
-        );
+          );
       },
     );
   }
