@@ -1,102 +1,103 @@
-# Ustaad Flutter
+<div align="center">
+  
+# 🛠️ Ustaad Service App
 
-Ustaad is a production-minded service-booking app for Pakistan's informal economy. It supports English, Urdu, and Roman Urdu requests, ranks nearby providers, manages bookings, saved professionals, profile details, provider contacts, reviews, and Supabase-backed workflow traces.
+**A production-minded service-booking application for Pakistan's informal economy.**
 
-## Product Flow
+[![Flutter CI](https://github.com/zaintahir2025/ustaad-agentic-service-app/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/zaintahir2025/ustaad-agentic-service-app/actions/workflows/flutter-ci.yml)
+[![Deploy Web App](https://github.com/zaintahir2025/ustaad-agentic-service-app/actions/workflows/github-pages.yml/badge.svg)](https://zaintahir2025.github.io/ustaad-agentic-service-app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-1. Customers sign in with Supabase Auth.
-2. Customers describe a service need in natural language.
-3. The app extracts service type, location, time, language, urgency, and confidence.
-4. Providers load from Supabase, with an offline catalog fallback.
-5. Ranking weighs distance, availability, rating, reliability, completed jobs, urgency, and price.
-6. Booking writes to Supabase, unlocks provider contact details, and stores trace events.
-7. Customers can search bookings, rebook, cancel, complete, report an issue, and review providers.
-8. Customers can save trusted providers and manage their profile, language, address, and avatar.
+*Supporting English, Urdu, and Roman Urdu requests, intelligently matching users with nearby professionals.*
 
-## Architecture
+[**Live Demo (Web)**](https://zaintahir2025.github.io/ustaad-agentic-service-app/)
 
-- `lib/main.dart`: Supabase initialization and Provider root.
-- `lib/src/ustaad_state.dart`: orchestration state, parser, ranking, profiles, bookings, saved providers, reviews.
-- `lib/src/ustaad_repository.dart`: Supabase Auth, Storage avatars, provider reads, booking writes, review writes, event writes.
-- `lib/src/ustaad_ui.dart`: responsive Flutter UI for mobile, tablet, desktop, and web.
-- `android/`, `ios/`, `web/`: Flutter platform runners.
-- `supabase/migrations/`: SQL schema, RLS policies, Storage bucket, seed providers, booking/event/review tables.
+---
 
-## Supabase
+</div>
 
-Configured project:
+## 🚀 Product Flow
 
-```dart
-https://dcsioxiiyazchampqulz.supabase.co
-```
+1. **Seamless Sign-in:** Customers authenticate via Firebase Auth (Email/Password or Anonymous Guest).
+2. **Natural Language Input:** Describe a service need in your own words (e.g., "Mera AC theek nahi chal raha").
+3. **Smart Extraction:** The app automatically extracts the required service type, location, time, language preference, and urgency.
+4. **Intelligent Ranking:** Providers are ranked based on distance, availability, ratings, reliability score, and price.
+5. **Effortless Booking:** Send a request to a provider, unlock contact details, and track your booking workflow.
+6. **Provider Management:** Save trusted professionals, leave reviews, and manage your custom profile.
 
-Apply migrations:
+---
 
-```sh
-supabase login
-supabase link --project-ref dcsioxiiyazchampqulz
-supabase db push
-```
+## 🏗️ Architecture
 
-Do not commit database passwords or private service keys. Client code uses only the publishable key.
+- `lib/main.dart`: Firebase initialization and Provider root.
+- `lib/src/ustaad_state.dart`: Orchestration state, NLP parsing, provider ranking, booking management, and UI logic.
+- `lib/src/ustaad_repository.dart`: Firebase Firestore interactions (Profiles, Providers, Bookings, Reviews) and Authentication.
+- `lib/src/ustaad_ui.dart`: Beautiful, responsive Flutter UI for mobile, tablet, desktop, and web.
+- `android/`, `ios/`, `web/`: Native Flutter platform runners.
 
-## Free Service Stack
+---
 
-The app avoids paid map and routing APIs:
+## 🔥 Firebase Setup
 
-- Maps: OpenStreetMap tiles through `flutter_map`.
-- Place search: Nominatim, with an offline Islamabad sector fallback.
-- Route/ETA estimates: OSRM public route service, with a local haversine fallback.
-- Voice input: device speech recognition through `speech_to_text`; no cloud speech key.
-- Provider contact: device phone and WhatsApp intents through `url_launcher`; no Twilio key.
-- AI matching: local multilingual parser and ranking logic; no LLM key required.
-- Hosting: GitHub Pages for web and GitHub Releases/Drive for APK sharing.
+This app is powered entirely by **Firebase** instead of Supabase. It uses Firebase Authentication for secure sign-ins and Cloud Firestore as a NoSQL backend for data storage.
 
-Services that still need your setup for production:
+### Prerequisites
+1. You must have a Firebase project created in your [Firebase Console](https://console.firebase.google.com/).
+2. You must have the Firebase CLI and FlutterFire CLI installed locally.
 
-- Push notifications: create a Firebase project, add Android/iOS apps, download `google-services.json` and `GoogleService-Info.plist`, then connect FCM to a Supabase Edge Function.
-- Production map tiles: create a free Stadia Maps or MapTiler account if traffic exceeds OpenStreetMap's public tile policy.
-- Production AI chat: create a Gemini API key in Google AI Studio if you want real generative responses instead of local simulated chat.
+### Configuration
+We have already run `flutterfire configure` which generated the `lib/firebase_options.dart` and native configuration files.
 
-## Supabase Auth Setup
+> **Note:** Do NOT commit your `firebase_options.dart` or `google-services.json` to public repositories if they contain restrictive billing keys.
 
-Email confirmation and password recovery are implemented in the app. Add these redirect URLs in Supabase Dashboard -> Authentication -> URL Configuration -> Additional Redirect URLs:
+### Enabling Authentication
+Make sure you enable **Email/Password** and **Anonymous** sign-in methods in your Firebase Console under **Authentication -> Sign-in method**. Otherwise, the Guest and Login buttons will not work!
 
-- `https://zaintahir2025.github.io/ustaad-agentic-service-app/`
-- `com.ustaad.service://auth-callback`
+---
 
-Set **Site URL** to:
+## 🛠️ Free Service Stack
 
-- `https://zaintahir2025.github.io/ustaad-agentic-service-app/`
+The app is built to be extremely cost-effective and avoids paid mapping or routing APIs where possible:
 
-Keep **Confirm email** enabled. New users will stay on a check-email state until they open the confirmation link. Password reset links return to the app and show a secure new-password screen.
+- **Maps:** OpenStreetMap tiles through `flutter_map`.
+- **Place Search:** Nominatim, with an offline fallback for local sectors.
+- **Route Estimates:** OSRM public route service, with a local haversine mathematical fallback.
+- **Voice Input:** On-device speech recognition via `speech_to_text` (no cloud keys needed).
+- **Provider Contact:** Native phone dialer and WhatsApp intents via `url_launcher`.
+- **Hosting:** Fully deployed and hosted on **GitHub Pages**.
 
-Supabase's built-in email sender has strict rate limits. The app handles this with a cooldown message and guest access for demos. For production, configure a custom SMTP provider in Supabase Dashboard -> Authentication -> SMTP Settings.
+---
 
-## Run
+## 💻 Running the App
 
+### Prerequisites
+- Flutter SDK (stable channel)
+- Firebase configured (see above)
+
+### Commands
+
+**1. Install Dependencies:**
 ```sh
 flutter pub get
+```
+
+**2. Run locally (Chrome):**
+```sh
 flutter run -d chrome
 ```
 
-Build web:
-
+**3. Build for Web (Production):**
 ```sh
 flutter build web --release --base-href "/ustaad-agentic-service-app/"
 ```
 
-Build Android:
-
+**4. Build for Android:**
 ```sh
 flutter build apk --debug
 ```
 
-## Verify
+---
 
-```sh
-flutter analyze
-flutter test
-flutter build web
-flutter build apk --debug
-```
+<div align="center">
+  Made with ❤️ by Zain Tahir
+</div>
