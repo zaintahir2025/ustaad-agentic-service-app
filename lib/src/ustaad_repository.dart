@@ -279,6 +279,21 @@ class UstaadRepository {
     }
   }
 
+  Future<UstaadUser> signInAnonymously() async {
+    try {
+      final response = await _auth.signInAnonymously();
+      final user = response.user;
+      if (user == null) {
+        throw const AuthException('Unable to sign in as guest.');
+      }
+      return await fetchProfile() ?? _userFromFirebase(user);
+    } on auth.FirebaseAuthException catch (e) {
+      throw AuthException(e.message ?? 'Unable to sign in as guest.');
+    } catch (e) {
+      throw const AuthException('Unable to sign in as guest.');
+    }
+  }
+
   Stream<auth.User?> get authStateChanges => _auth.authStateChanges();
 
   Future<AuthSignUpResult> signUp({

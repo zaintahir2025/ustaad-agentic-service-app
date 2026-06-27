@@ -350,23 +350,24 @@ class UstaadState extends ChangeNotifier {
     }
   }
 
-  Future<void> continueAsGuest({
-    required String name,
-    String email = 'guest@ustaad.local',
-    String phone = '+923001234567',
-  }) async {
-    user = UstaadUser(
-      id: 'guest-${DateTime.now().millisecondsSinceEpoch}',
-      name: name.trim().isEmpty ? 'Guest Customer' : name.trim(),
-      email: email.trim().isEmpty ? 'guest@ustaad.local' : email.trim(),
-      phone: phone.trim().isEmpty ? '+923001234567' : phone.trim(),
-    );
-    pendingConfirmationEmail = null;
-    passwordRecoveryActive = false;
-    bookings = const [];
-    bannerMessage = 'Guest mode active. Bookings stay on this device.';
-    screen = UstaadScreen.commandCenter;
+  Future<void> continueAsGuest() async {
+    authBusy = true;
     notifyListeners();
+    try {
+      user = await _repository.signInAnonymously();
+      sessionExpiresAt = _repository.currentSessionExpiresAt();
+      pendingConfirmationEmail = null;
+      passwordRecoveryActive = false;
+      bookings = const [];
+      bannerMessage = 'Guest mode active.';
+      screen = UstaadScreen.commandCenter;
+      authBusy = false;
+      notifyListeners();
+    } catch (e) {
+      bannerMessage = 'Could not sign in as guest: $e';
+      authBusy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> _activateLocalSignup({

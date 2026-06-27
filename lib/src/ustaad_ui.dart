@@ -518,18 +518,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
   }
 
   Future<void> _continueAsGuest() async {
-    final name = _joinName.text.trim().isNotEmpty
-        ? _joinName.text.trim()
-        : _loginEmail.text.trim().isNotEmpty
-            ? _loginEmail.text.trim().split('@').first
-            : 'Guest Customer';
-    await context.read<UstaadState>().continueAsGuest(
-          name: name,
-          email: _joinEmail.text.trim().isNotEmpty
-              ? _joinEmail.text.trim()
-              : _loginEmail.text.trim(),
-          phone: _joinPhone.text.trim(),
-        );
+    await context.read<UstaadState>().continueAsGuest();
     if (!mounted) return;
     _show(context.read<UstaadState>().bannerMessage ?? 'Guest mode active.');
   }
