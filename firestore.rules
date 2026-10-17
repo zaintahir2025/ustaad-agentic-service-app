@@ -2,10 +2,126 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access for all users during development
-    // Make sure to secure this before going to production!
+
+    // -------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && resource.data.user_id == request.auth.uid;
+    }
+
+    function incomingDocOwner() {
+      return isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+    }
+
+    function isNonEmptyString(val, maxLength) {
+      return val is string && val.size() > 0 && val.size() <= maxLength;
+    }
+
+    // -------------------------------------------------------------
+    // User Profiles
+    // -------------------------------------------------------------
+    match /profiles/{userId} {
+      // Authenticated users can view basic profiles
+      allow read: if isAuthenticated();
+
+      // Only the profile owner can create or update their profile
+      allow create, update: if isOwner(userId)
+        && request.resource.data.id == userId
+        && isNonEmptyString(request.resource.data.full_name, 100)
+        && (!('bio' in request.resource.data) || request.resource.data.bio.size() <= 500)
+        && (!('address' in request.resource.data) || request.resource.data.address.size() <= 300)
+        && (!('phone' in request.resource.data) || request.resource.data.phone.size() <= 30);
+
+      // Prevent accidental or malicious profile deletion
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Service Providers (Master Catalog)
+    // -------------------------------------------------------------
+    match /service_providers/{providerId} {
+      // Public directory is readable by all users
+      allow read: if true;
+
+      // Service providers are managed by administrators, never by app users
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Bookings
+    // -------------------------------------------------------------
+    match /bookings/{bookingId} {
+      // Only the customer who owns the booking can read it
+      allow read: if isDocOwner();
+
+      // Customers can only create bookings tied directly to their UID
+      allow create: if incomingDocOwner()
+        && isNonEmptyString(request.resource.data.provider_id, 100)
+        && request.resource.data.quote_total is int
+        && request.resource.data.quote_total > 0
+        && request.resource.data.quote_base is int
+        && request.resource.data.quote_base > 0
+        && request.resource.data.status in ['scheduled', 'en_route']
+        && request.resource.data.created_at != null;
+
+      // Status updates: customers can only cancel or report issues, never tamper with pricing
+      allow update: if isDocOwner()
+        && request.resource.data.user_id == resource.data.user_id
+        && request.resource.data.provider_id == resource.data.provider_id
+        && request.resource.data.quote_total == resource.data.quote_total
+        && request.resource.data.quote_base == resource.data.quote_base
+        && request.resource.data.status in ['scheduled', 'en_route', 'completed', 'cancelled', 'issue_reported'];
+
+      // Deletion blocked to maintain complete audit trail
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Agent Workflow Events (Audit Trail)
+    // -------------------------------------------------------------
+    match /agent_events/{eventId} {
+      allow read: if isDocOwner();
+      allow create: if incomingDocOwner()
+        && isNonEmptyString(request.resource.data.booking_id, 100);
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Reviews
+    // -------------------------------------------------------------
+    match /reviews/{reviewId} {
+      // Publicly readable so customers can view provider ratings
+      allow read: if true;
+
+      // Only signed-in users can leave a review with valid ratings & comments
+      allow create: if incomingDocOwner()
+        && isNonEmptyString(request.resource.data.provider_id, 100)
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() >= 3
+        && request.resource.data.comment.size() <= 1000
+        && request.resource.data.created_at != null;
+
+      // Reviews cannot be altered or removed once submitted
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Default Fallback: Deny Everything Else
+    // -------------------------------------------------------------
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

@@ -166,6 +166,11 @@ class UstaadTheme {
       colorScheme: scheme,
       brightness: scheme.brightness,
       fontFamily: 'Roboto',
+      fontFamilyFallback: const [
+        'Noto Nastaliq Urdu',
+        'Urdu Typesetting',
+        'Arial',
+      ],
       scaffoldBackgroundColor: background,
       cardColor: card,
       dividerColor: divider,

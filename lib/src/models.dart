@@ -209,6 +209,29 @@ class UstaadProviderProfile {
           : _asDouble(map['longitude'], fallback: 73.0652),
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'role': role,
+      'reliability': reliability,
+      'distance_km': distanceKm,
+      'rating': rating,
+      'price': price,
+      'avatar_url': avatarUrl,
+      'verified': verified,
+      'city': city,
+      'phone': phone,
+      'whatsapp': whatsapp,
+      'response_time_minutes': responseTimeMinutes,
+      'availability_slots': availabilitySlots,
+      'jobs_completed': jobsCompleted,
+      'latitude': latitude,
+      'longitude': longitude,
+      'active': true,
+    };
+  }
 }
 
 class BookingRecord {
@@ -439,6 +462,24 @@ class WorkflowEvent {
   final String message;
   final String toolName;
   final String status;
+}
+
+class AIChatMessage {
+  const AIChatMessage({
+    required this.id,
+    required this.text,
+    required this.isUser,
+    required this.timestamp,
+    this.suggestedRole,
+    this.suggestedAction,
+  });
+
+  final String id;
+  final String text;
+  final bool isUser;
+  final DateTime timestamp;
+  final String? suggestedRole;
+  final String? suggestedAction;
 }
 
 class EmergencyRequest {

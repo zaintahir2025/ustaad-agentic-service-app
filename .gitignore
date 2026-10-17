@@ -1,3 +1,4 @@
+# Flutter / Dart
 .dart_tool/
 .idea/
 .flutter-plugins
@@ -5,13 +6,40 @@
 .packages
 build/
 coverage/
-supabase/.temp/
 devtools_options.yaml
 
+# Visual Studio Code / IDEs
+.vscode/
 *.iml
+
+# Compiled & Temporary Files
 *.log
 *.pyc
+*.tmp
+*.bak
 
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*service-account*.json
+*firebase-adminsdk*.json
+
+# Platform Specific
 android/.gradle/
+android/local.properties
+android/key.properties
 ios/Flutter/Generated.xcconfig
 ios/Flutter/flutter_export_environment.sh
+ios/Pods/
+.symlinks/
+
+# OS Generated
+.DS_Store
+Thumbs.db

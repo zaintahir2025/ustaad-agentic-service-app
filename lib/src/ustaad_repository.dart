@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -16,13 +17,50 @@ class AuthException implements Exception {
 }
 
 class UstaadRepository {
-  UstaadRepository();
+  UstaadRepository({
+    auth.FirebaseAuth? authInstance,
+    FirebaseFirestore? firestoreInstance,
+    FirebaseStorage? storageInstance,
+  })  : _customAuth = authInstance,
+        _customDb = firestoreInstance,
+        _customStorage = storageInstance;
 
-  final auth.FirebaseAuth _auth = auth.FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final auth.FirebaseAuth? _customAuth;
+  final FirebaseFirestore? _customDb;
+  final FirebaseStorage? _customStorage;
+
+  bool get isFirebaseInitialized =>
+      _customAuth != null || Firebase.apps.isNotEmpty;
+
+  auth.FirebaseAuth get _auth =>
+      _customAuth ??
+      (isFirebaseInitialized
+          ? auth.FirebaseAuth.instance
+          : throw const AuthException('Firebase is not initialized.'));
+
+  FirebaseFirestore get _db =>
+      _customDb ??
+      (isFirebaseInitialized
+          ? FirebaseFirestore.instance
+          : throw StateError('Firebase is not initialized.'));
+
+  FirebaseStorage get _storage =>
+      _customStorage ??
+      (isFirebaseInitialized
+          ? FirebaseStorage.instance
+          : throw StateError('Firebase is not initialized.'));
 
   static const _networkTimeout = Duration(seconds: 8);
+
+  /// Strips control characters and enforces a maximum string length to prevent injection.
+  static String sanitizeInput(String input, {int maxLength = 500}) {
+    if (input.isEmpty) return '';
+    final sanitized = input
+        .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
+        .trim();
+    if (sanitized.length <= maxLength) return sanitized;
+    return sanitized.substring(0, maxLength);
+  }
 
   static const List<UstaadProviderProfile> seedProviders = [
     UstaadProviderProfile(
@@ -226,15 +264,14 @@ class UstaadRepository {
   }
 
   UstaadUser? currentUser() {
+    if (!isFirebaseInitialized) return null;
     final user = _auth.currentUser;
     if (user == null) return null;
     return _userFromFirebase(user);
   }
 
   DateTime? currentSessionExpiresAt() {
-    // Firebase auth tokens are generally managed automatically
-    // You could decode the JWT to find exactly when it expires, but usually we just consider it valid if currentUser is not null.
-    // For now returning null or a generic far future date.
+    if (!isFirebaseInitialized) return null;
     if (_auth.currentUser != null) {
       return DateTime.now().add(const Duration(hours: 1));
     }
@@ -242,6 +279,7 @@ class UstaadRepository {
   }
 
   Future<UstaadUser?> fetchProfile() async {
+    if (!isFirebaseInitialized) return null;
     final user = _auth.currentUser;
     if (user == null) return null;
 
@@ -294,7 +332,8 @@ class UstaadRepository {
     }
   }
 
-  Stream<auth.User?> get authStateChanges => _auth.authStateChanges();
+  Stream<auth.User?> get authStateChanges =>
+      !isFirebaseInitialized ? const Stream.empty() : _auth.authStateChanges();
 
   Future<AuthSignUpResult> signUp({
     required String name,
@@ -377,8 +416,15 @@ class UstaadRepository {
       throw const AuthException('Sign in to update your profile.');
     }
 
+    final cleanName = sanitizeInput(name, maxLength: 100);
+    final cleanPhone = sanitizeInput(phone, maxLength: 30);
+    final cleanCity = sanitizeInput(city, maxLength: 100);
+    final cleanAddress = sanitizeInput(address, maxLength: 300);
+    final cleanLang = sanitizeInput(preferredLanguage, maxLength: 50);
+    final cleanBio = sanitizeInput(bio, maxLength: 500);
+
     try {
-      await user.updateDisplayName(name);
+      await user.updateDisplayName(cleanName);
       if (avatarUrl != null) {
         await user.updatePhotoURL(avatarUrl);
       }
@@ -386,24 +432,24 @@ class UstaadRepository {
 
     await _db.collection('profiles').doc(user.uid).set({
       'id': user.uid,
-      'full_name': name,
+      'full_name': cleanName,
       'email': user.email ?? '',
-      'phone': phone,
+      'phone': cleanPhone,
       'avatar_url': avatarUrl ?? '',
-      'city': city,
-      'address': address,
-      'preferred_language': preferredLanguage,
-      'bio': bio,
+      'city': cleanCity,
+      'address': cleanAddress,
+      'preferred_language': cleanLang,
+      'bio': cleanBio,
     }, SetOptions(merge: true));
 
     return await fetchProfile() ??
         _userFromFirebase(user).copyWith(
-          name: name,
-          phone: phone,
-          city: city,
-          address: address,
-          preferredLanguage: preferredLanguage,
-          bio: bio,
+          name: cleanName,
+          phone: cleanPhone,
+          city: cleanCity,
+          address: cleanAddress,
+          preferredLanguage: cleanLang,
+          bio: cleanBio,
           avatarUrl: avatarUrl,
         );
   }
@@ -418,6 +464,18 @@ class UstaadRepository {
       throw const AuthException('Sign in to upload a profile photo.');
     }
 
+    // Security Check: File size limit (Max 5MB)
+    if (bytes.lengthInBytes > 5 * 1024 * 1024) {
+      throw const AuthException('Profile photo must be less than 5MB.');
+    }
+
+    // Security Check: MIME type validation
+    final mime = contentType.trim().toLowerCase();
+    const allowedMimes = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'};
+    if (!allowedMimes.contains(mime)) {
+      throw const AuthException('Only JPEG, PNG, WebP, or GIF images are allowed.');
+    }
+
     final cleanName = fileName
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9_.-]'), '-')
@@ -425,7 +483,7 @@ class UstaadRepository {
     final path = '${user.uid}/${DateTime.now().millisecondsSinceEpoch}_$cleanName';
     
     final ref = _storage.ref().child('avatars').child(path);
-    final metadata = SettableMetadata(contentType: contentType);
+    final metadata = SettableMetadata(contentType: mime);
     await ref.putData(bytes, metadata);
     return await ref.getDownloadURL();
   }
@@ -465,6 +523,7 @@ class UstaadRepository {
   }
 
   Future<List<UstaadProviderProfile>> fetchProviders() async {
+    if (!isFirebaseInitialized) return seedProviders;
     try {
       final snapshot = await _db
           .collection('service_providers')
@@ -481,6 +540,22 @@ class UstaadRepository {
       // Return empty or seed if failed
       return seedProviders;
     }
+  }
+
+  /// Automatically populates Firestore with initial verified providers if the collection is empty.
+  Future<void> seedDatabaseIfEmpty() async {
+    if (!isFirebaseInitialized) return;
+    try {
+      final snapshot = await _db.collection('service_providers').limit(1).get();
+      if (snapshot.docs.isEmpty) {
+        final batch = _db.batch();
+        for (final provider in seedProviders) {
+          final doc = _db.collection('service_providers').doc(provider.id);
+          batch.set(doc, provider.toMap());
+        }
+        await batch.commit();
+      }
+    } catch (_) {}
   }
 
   Future<List<LocationSuggestion>> searchLocations(String query) async {
@@ -588,6 +663,7 @@ class UstaadRepository {
   }
 
   Future<List<BookingRecord>> fetchBookings() async {
+    if (!isFirebaseInitialized) return const [];
     final user = _auth.currentUser;
     if (user == null) return const [];
 
@@ -619,13 +695,21 @@ class UstaadRepository {
       throw const AuthException('Sign in to create a booking.');
     }
 
+    final cleanProblem = sanitizeInput(problemText, maxLength: 500);
+    final cleanLocation = sanitizeInput(intent.location, maxLength: 200);
+
+    // Security check: Pricing cannot be negative or zero
+    if (quote.basePrice <= 0 || quote.total <= 0) {
+      throw const AuthException('Invalid quote calculated.');
+    }
+
     final docRef = await _db.collection('bookings').add({
       'user_id': user.uid,
       'provider_id': provider.id,
       'provider_name': provider.name,
       'service_role': provider.role,
-      'problem_text': problemText,
-      'service_location': intent.location,
+      'problem_text': cleanProblem,
+      'service_location': cleanLocation,
       'urgency': intent.urgency.toLowerCase(),
       'quote_base': quote.basePrice,
       'quote_distance': quote.distancePrice,
@@ -685,13 +769,14 @@ class UstaadRepository {
     }
 
     try {
+      final cleanLocation = sanitizeInput(emergency.location, maxLength: 200);
       final docRef = await _db.collection('bookings').add({
         'user_id': user.uid,
         'provider_id': provider.id,
         'provider_name': provider.name,
         'service_role': provider.role,
         'problem_text': 'Emergency ${emergency.serviceType} request',
-        'service_location': emergency.location,
+        'service_location': cleanLocation,
         'urgency': 'CRITICAL',
         'quote_base': quote.basePrice,
         'quote_distance': quote.distancePrice,
@@ -752,6 +837,20 @@ class UstaadRepository {
     required String bookingId,
     required String status,
   }) async {
+    const validStatuses = {
+      'scheduled',
+      'en_route',
+      'completed',
+      'cancelled',
+      'issue_reported'
+    };
+    if (!validStatuses.contains(status)) {
+      throw const AuthException('Invalid booking status.');
+    }
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Sign in to update booking status.');
+    }
     final docRef = _db.collection('bookings').doc(bookingId);
     await docRef.update({'status': status});
     final doc = await docRef.get();
@@ -788,13 +887,17 @@ class UstaadRepository {
       throw const AuthException('Sign in to leave a review.');
     }
 
+    final cleanComment = sanitizeInput(comment, maxLength: 1000);
+    final clampedRating = rating.clamp(1, 5);
+
     final docRef = await _db.collection('reviews').add({
+      'user_id': user.uid,
       'provider_id': providerId,
-      'rating': rating,
-      'comment': comment,
+      'rating': clampedRating,
+      'comment': cleanComment,
       'language': language,
       'booking_id': bookingId,
-      'customer_name': user.displayName ?? 'Customer',
+      'customer_name': sanitizeInput(user.displayName ?? 'Customer', maxLength: 100),
       'created_at': FieldValue.serverTimestamp(),
     });
 

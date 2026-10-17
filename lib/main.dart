@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'src/app_theme.dart';
+import 'src/l10n/app_localizations.dart';
 import 'src/ustaad_state.dart';
 import 'src/ustaad_repository.dart';
 import 'src/ustaad_ui.dart';
@@ -10,6 +13,7 @@ import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  usePathUrlStrategy();
 
   runApp(const UstaadBootstrapApp());
 }
@@ -136,20 +140,31 @@ class _StartupShell extends StatelessWidget {
   }
 }
 
-class UstaadApp extends StatelessWidget {
+class UstaadApp extends StatefulWidget {
   const UstaadApp({super.key});
+
+  @override
+  State<UstaadApp> createState() => _UstaadAppState();
+}
+
+class _UstaadAppState extends State<UstaadApp> {
+  GoRouter? _router;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<UstaadState>(
       builder: (context, state, _) {
-        return MaterialApp(
+        _router ??= createUstaadRouter(state);
+        return MaterialApp.router(
           title: 'Ustaad',
           debugShowCheckedModeBanner: false,
           themeMode: state.themeMode,
           theme: UstaadTheme.light,
           darkTheme: UstaadTheme.dark,
-          home: const UstaadRouter(),
+          locale: state.currentLocale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          routerConfig: _router,
         );
       },
     );

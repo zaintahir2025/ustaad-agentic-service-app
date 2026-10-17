@@ -2,10 +2,29 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow read/write access for all users during development
-    // Make sure to secure this before going to production!
+
+    // -------------------------------------------------------------
+    // User Avatars
+    // -------------------------------------------------------------
+    match /avatars/{userId}/{allPaths=**} {
+      // Avatars are publicly viewable by all app users
+      allow read: if true;
+
+      // Only the authenticated account owner can upload/replace their own avatar
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 5 * 1024 * 1024 // 5 MB maximum file size
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+
+      // Owner can remove their own avatar image
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // -------------------------------------------------------------
+    // Default Fallback: Deny Everything Else
+    // -------------------------------------------------------------
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

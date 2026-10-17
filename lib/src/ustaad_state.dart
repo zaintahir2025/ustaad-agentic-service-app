@@ -8,6 +8,8 @@ import 'package:firebase_auth/firebase_auth.dart' as auth;
 
 import 'models.dart';
 import 'ustaad_repository.dart';
+import 'gemini_service.dart';
+import 'ai_engine_router.dart';
 
 class UstaadState extends ChangeNotifier {
   UstaadState(this._repository) {
@@ -15,10 +17,26 @@ class UstaadState extends ChangeNotifier {
   }
 
   final UstaadRepository _repository;
+  final AIEngineRouter aiRouter = AIEngineRouter();
+  GeminiService get geminiService => GeminiService(initialApiKey: aiRouter.geminiApiKey);
   late final StreamSubscription<auth.User?> _authSubscription;
+
+  AIEngineType lastResolvedEngine = AIEngineType.localHeuristic;
+  List<String> lastLadderAuditLog = const [];
 
   bool bootstrapped = false;
   bool backendOnline = false;
+  bool isAnalyzing = false;
+  bool chatBusy = false;
+  List<AIChatMessage> chatMessages = [
+    AIChatMessage(
+      id: 'welcome',
+      text:
+          'Assalamu Alaikum! I am Ustaad AI, your intelligent booking assistant. You can describe any repair or maintenance issue in Urdu, Roman Urdu, or English, and I will recommend the right certified professional.',
+      isUser: false,
+      timestamp: DateTime.now(),
+    ),
+  ];
   bool authBusy = false;
   bool bookingBusy = false;
   bool profileBusy = false;
@@ -32,6 +50,20 @@ class UstaadState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.dark;
   UstaadScreen screen = UstaadScreen.gateway;
   UstaadUser? user;
+  String selectedLanguage = 'English';
+
+  Locale get currentLocale {
+    final lang = (user?.preferredLanguage.isNotEmpty == true)
+        ? user!.preferredLanguage
+        : selectedLanguage;
+    return switch (lang.toLowerCase()) {
+      'urdu' => const Locale('ur'),
+      'roman urdu' => const Locale('en', 'PK'),
+      _ => const Locale('en'),
+    };
+  }
+
+  bool get isRtl => currentLocale.languageCode == 'ur';
 
   List<UstaadProviderProfile> providers = UstaadRepository.seedProviders;
   List<UstaadProviderProfile> rankedProviders = const [];
@@ -88,14 +120,20 @@ class UstaadState extends ChangeNotifier {
         .map(_suggestionFromStoredText)
         .toList();
     totalBookingsCount = prefs.getInt('ustaad_total_bookings') ?? 0;
+    selectedLanguage = prefs.getString('ustaad_selected_language') ?? 'English';
     user = _repository.currentUser();
     sessionExpiresAt = _repository.currentSessionExpiresAt();
     if (user != null) {
       user = await _repository.fetchProfile() ?? user;
+      if (user!.preferredLanguage.isNotEmpty) {
+        selectedLanguage = user!.preferredLanguage;
+      }
       screen = UstaadScreen.commandCenter;
       await refreshBookings(silent: true);
     }
+    await _repository.seedDatabaseIfEmpty();
     await refreshProviders(silent: true);
+    await aiRouter.initialize();
     bootstrapped = true;
     notifyListeners();
   }
@@ -132,6 +170,25 @@ class UstaadState extends ChangeNotifier {
     themeMode = isDark ? ThemeMode.light : ThemeMode.dark;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('ustaad_dark_theme', themeMode == ThemeMode.dark);
+    notifyListeners();
+  }
+
+  Future<void> setLanguage(String language) async {
+    selectedLanguage = language;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ustaad_selected_language', language);
+    if (user != null) {
+      user = user!.copyWith(preferredLanguage: language);
+      await _repository.updateProfile(
+        name: user!.name,
+        phone: user!.phone ?? '',
+        city: user!.city,
+        address: user!.address,
+        preferredLanguage: language,
+        bio: user!.bio,
+        avatarUrl: user!.avatarUrl,
+      );
+    }
     notifyListeners();
   }
 
@@ -343,7 +400,7 @@ class UstaadState extends ChangeNotifier {
       notifyListeners();
       return false;
     } catch (_) {
-      bannerMessage = 'Could not reach Supabase Auth. Check your connection.';
+      bannerMessage = 'Authentication service unavailable. Check your connection.';
       authBusy = false;
       notifyListeners();
       return false;
@@ -389,7 +446,7 @@ class UstaadState extends ChangeNotifier {
     bookings = const [];
     await _rememberEmail(email, remember);
     bannerMessage = message ??
-        'Account created locally. Confirm email later to sync with Supabase.';
+        'Account created locally. Sign in with your credentials to sync with the cloud.';
     screen = UstaadScreen.commandCenter;
   }
 
@@ -407,7 +464,7 @@ class UstaadState extends ChangeNotifier {
         phone: phone,
         remember: remember,
         message:
-            'Account created locally. Supabase email is cooling down, so sync can happen after confirmation.',
+            'Account created locally. Email limit reached, cloud sync can occur after confirmation.',
       );
       notifyListeners();
       return true;
@@ -474,7 +531,7 @@ class UstaadState extends ChangeNotifier {
         phone: phone,
         remember: remember,
         message:
-            'Account created locally. Cloud sync will be available once Supabase email limits reset.',
+            'Account created locally. Cloud sync will be available once email verification limits reset.',
       );
       authBusy = false;
       notifyListeners();
@@ -506,7 +563,7 @@ class UstaadState extends ChangeNotifier {
         phone: phone,
         remember: remember,
         message:
-            'Account created locally. Cloud signup will be available when Supabase is reachable.',
+            'Account created locally. Cloud signup will be available when connection is restored.',
       );
       authBusy = false;
       notifyListeners();
@@ -733,19 +790,105 @@ class UstaadState extends ChangeNotifier {
       profileBusy = false;
       notifyListeners();
       return true;
-    } catch (_) {
-      bannerMessage = 'Photo upload failed. Check Supabase Storage policies.';
+    } catch (e) {
+      bannerMessage = e is AuthException ? e.message : 'Photo upload failed. Please verify image format and size (<5MB).';
       profileBusy = false;
       notifyListeners();
       return false;
     }
   }
 
-  void startAnalysis(String problem, String location) {
+  Future<void> sendChatMessage(String text) async {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+
+    final userMsg = AIChatMessage(
+      id: 'user-${DateTime.now().microsecondsSinceEpoch}',
+      text: clean,
+      isUser: true,
+      timestamp: DateTime.now(),
+    );
+    chatMessages = [...chatMessages, userMsg];
+    chatBusy = true;
+    notifyListeners();
+
+    final replyText = await aiRouter.executeChatLadder(
+      history: chatMessages,
+      userMessage: clean,
+    );
+
+    final quickIntent = _inferIntent(clean, lastLocation);
+    final hasRole = quickIntent.role != 'General';
+
+    final aiMsg = AIChatMessage(
+      id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
+      text: replyText,
+      isUser: false,
+      timestamp: DateTime.now(),
+      suggestedRole: hasRole ? quickIntent.role : null,
+      suggestedAction: hasRole ? 'Find ${quickIntent.role}s' : null,
+    );
+
+    chatMessages = [...chatMessages, aiMsg];
+    chatBusy = false;
+    notifyListeners();
+  }
+
+  void clearChat() {
+    chatMessages = [
+      AIChatMessage(
+        id: 'welcome-${DateTime.now().millisecondsSinceEpoch}',
+        text:
+            'Assalamu Alaikum! How can I help you today? Describe your service requirement in Urdu, Roman Urdu, or English.',
+        isUser: false,
+        timestamp: DateTime.now(),
+      ),
+    ];
+    notifyListeners();
+  }
+
+  Future<void> setCloudApiKey(String key) async {
+    await aiRouter.setCloudConfig(key: key);
+    bannerMessage = aiRouter.hasCloudKey
+        ? 'OpenRouter Cloud AI key configured.'
+        : 'Cloud AI key cleared (failover will use on-device Llama/heuristics).';
+    notifyListeners();
+  }
+
+  Future<void> setGeminiApiKey(String key) async {
+    await setCloudApiKey(key);
+  }
+
+  Future<void> setSecondaryEngineConfig({
+    required String url,
+    required String key,
+    required String model,
+  }) async {
+    await aiRouter.setCloudConfig(url: url, key: key, model: model);
+    bannerMessage = 'Cloud AI configuration saved.';
+    notifyListeners();
+  }
+
+  Future<void> startAnalysis(String problem, String location) async {
     lastProblem = problem;
     lastLocation =
         location.trim().isEmpty ? 'G-13, Islamabad' : location.trim();
-    final nextIntent = _inferIntent(lastProblem, lastLocation);
+    isAnalyzing = true;
+    notifyListeners();
+
+    final localFallback = _inferIntent(lastProblem, lastLocation);
+
+    // Execute Neuroscript-style Failover Engine Ladder
+    final ladderResult = await aiRouter.executeIntentLadder(
+      problemText: lastProblem,
+      fallbackLocation: lastLocation,
+      localFallback: localFallback,
+    );
+
+    lastResolvedEngine = ladderResult.resolvedEngine;
+    lastLadderAuditLog = ladderResult.ladderAuditLog;
+
+    final nextIntent = ladderResult.intent;
     final ranked = _rankProviders(nextIntent);
     final firstProvider = ranked.first;
 
@@ -753,7 +896,14 @@ class UstaadState extends ChangeNotifier {
     rankedProviders = ranked;
     selectedProvider = firstProvider;
     quote = _quoteFor(firstProvider, nextIntent);
-    workflowEvents = _buildWorkflowEvents(nextIntent, ranked);
+    workflowEvents = _buildWorkflowEvents(
+      nextIntent,
+      ranked,
+      reasoningSteps: ladderResult.reasoningSteps,
+      engine: ladderResult.resolvedEngine,
+      auditLog: ladderResult.ladderAuditLog,
+    );
+    isAnalyzing = false;
     screen = UstaadScreen.selection;
     addToRecentRequests(lastProblem, lastLocation);
     _checkAndUnlockAchievements();
@@ -1113,8 +1263,11 @@ class UstaadState extends ChangeNotifier {
 
   List<WorkflowEvent> _buildWorkflowEvents(
     ServiceIntent nextIntent,
-    List<UstaadProviderProfile> ranked,
-  ) {
+    List<UstaadProviderProfile> ranked, {
+    List<String> reasoningSteps = const [],
+    AIEngineType engine = AIEngineType.localHeuristic,
+    List<String> auditLog = const [],
+  }) {
     final best = ranked.first;
     final second = ranked.length > 1 ? ranked[1] : best;
     final estimate = _quoteFor(best, nextIntent);
@@ -1122,20 +1275,42 @@ class UstaadState extends ChangeNotifier {
     final sector = _sectorFromLocation(nextIntent.location);
     final nearbyCount =
         ranked.where((provider) => provider.distanceKm <= 15).length;
+
+    final engineName = switch (engine) {
+      AIEngineType.openRouterCloud => 'OpenRouter DeepSeek (Cloud Primary)',
+      AIEngineType.onDeviceLlama => 'On-Device Llama (llamadart GGUF JSON)',
+      AIEngineType.localHeuristic => 'On-Device Heuristic Engine (Safety Net)',
+    };
+
+    final nlpMessage = reasoningSteps.isNotEmpty
+        ? reasoningSteps.first
+        : 'Input processed in ${nextIntent.language}. Tokenized $tokenCount words. Extracted service=${nextIntent.role}, location=${nextIntent.location}, urgency=${nextIntent.urgency}. Confidence: ${(nextIntent.confidence * 100).round()}%.';
+
+    final ladderSummary = auditLog.isNotEmpty
+        ? auditLog.join(' ➔ ')
+        : 'Engine cascade validated.';
+
     return [
       WorkflowEvent(
+        agentName: 'Engine Router',
+        step: 'Failover Ladder Resolution',
+        message: 'Ladder evaluation: $ladderSummary',
+        toolName: 'Failover Cascade Ladder',
+        status: 'done',
+      ),
+      WorkflowEvent(
         agentName: 'NLP Interpreter',
-        step: 'Parse Input',
-        message:
-            'Input received in ${nextIntent.language}. Tokenized $tokenCount words. Extracted service_type=${nextIntent.role}, location=${nextIntent.location}, time=${nextIntent.timeLabel}, urgency=${nextIntent.urgency}. Confidence: ${(nextIntent.confidence * 100).round()}%.',
-        toolName: 'Multilingual Parser v2',
+        step: 'Semantic Extraction',
+        message: '$nlpMessage [Resolved via $engineName]',
+        toolName: engineName,
         status: 'done',
       ),
       WorkflowEvent(
         agentName: 'Context Agent',
         step: 'Enrich Context',
-        message:
-            'Resolved ${nextIntent.location} to GPS coordinates. Identified sector: $sector. Radius: 15km search zone activated.',
+        message: reasoningSteps.length > 1
+            ? reasoningSteps[1]
+            : 'Resolved ${nextIntent.location} to target sector $sector. Activated 15km service zone.',
         toolName: 'Location Resolver',
         status: 'done',
       ),
@@ -1144,7 +1319,7 @@ class UstaadState extends ChangeNotifier {
         step: 'Provider Search',
         message:
             'Queried service_providers table with filter role=${nextIntent.role}. Found ${ranked.length} candidates in database. Applied city filter. $nearbyCount providers within 15km radius.',
-        toolName: 'Supabase / Mock DB',
+        toolName: 'Cloud Firestore / Catalog',
         status: 'done',
       ),
       WorkflowEvent(
