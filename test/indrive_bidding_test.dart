@@ -123,5 +123,27 @@ void main() {
       expect(updated.status, equals('completed'));
       expect(updated.userOffer, equals(600));
     });
+
+    test('User exact prompt (sink, washroom, 100 rs) extracts Plumber role and 100 offer', () async {
+      final state = UstaadState(UstaadRepository());
+
+      const userText = 'mujhe 100 rs ma aik technician chahiye jo aa k mere washroom ka sink theek kar de';
+      await state.sendChatMessage(userText);
+
+      expect(state.chatMessages.length, equals(3)); // Initial welcome + User + AI
+      final aiReply = state.chatMessages.last;
+      expect(aiReply.suggestedRole, equals('Plumber'));
+      expect(aiReply.suggestedBudget, equals(100));
+      expect(aiReply.suggestedAction, equals('Find Plumbers (Offer: Rs. 100)'));
+      expect(aiReply.text.toLowerCase().contains('plumber') || aiReply.text.toLowerCase().contains('sink'), isTrue);
+      expect(aiReply.text.contains('100'), isTrue);
+
+      // Now verify startAnalysis with the prompt
+      await state.startAnalysis(userText, 'G-13, Islamabad');
+      expect(state.intent?.role, equals('Plumber'));
+      expect(state.intent?.userBudget, equals(100));
+      expect(state.activeOffer, equals(100));
+      expect(state.rankedProviders.every((p) => p.role == 'Plumber'), isTrue);
+    });
   });
 }

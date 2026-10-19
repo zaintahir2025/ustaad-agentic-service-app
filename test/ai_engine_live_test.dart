@@ -79,7 +79,7 @@ void main() {
       // Cloud DeepSeek AI should give a helpful contextual answer
       final lower = reply.toLowerCase();
       expect(
-        lower.contains('plumb') || lower.contains('valve') || lower.contains('water') || lower.contains('paani') || lower.contains('leak'),
+        lower.contains('plumb') || lower.contains('valve') || lower.contains('water') || lower.contains('paani') || lower.contains('leak') || lower.contains('پانی') || lower.contains('لیک') || lower.contains('نل'),
         isTrue,
       );
     }, timeout: const Timeout(Duration(seconds: 30)));

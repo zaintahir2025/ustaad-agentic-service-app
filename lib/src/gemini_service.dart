@@ -135,6 +135,16 @@ class GeminiService {
         );
       }
 
+      int? userBudget;
+      if (parsed['userBudget'] != null) {
+        if (parsed['userBudget'] is num) {
+          userBudget = (parsed['userBudget'] as num).toInt();
+        } else {
+          userBudget = int.tryParse(parsed['userBudget'].toString());
+        }
+      }
+      userBudget ??= localFallback.userBudget;
+
       return ServiceIntent(
         role: role,
         description: description,
@@ -143,6 +153,7 @@ class GeminiService {
         timeLabel: timeLabel,
         language: language,
         confidence: confidence,
+        userBudget: userBudget,
       );
     } catch (e) {
       debugPrint('Gemini extraction fallback: $e');
@@ -183,14 +194,22 @@ class GeminiService {
   String _canonicalRole(String? raw) {
     if (raw == null) return 'General';
     final lower = raw.toLowerCase();
-    if (lower.contains('electr')) return 'Electrician';
-    if (lower.contains('plumb')) return 'Plumber';
-    if (lower.contains('ac') || lower.contains('cooling') || lower.contains('air')) {
+    if (lower.contains('electr') || lower.contains('wire') || lower.contains('breaker') || lower.contains('fan')) {
+      return 'Electrician';
+    }
+    if (lower.contains('plumb') || lower.contains('sink') || lower.contains('washroom') || lower.contains('toilet') || lower.contains('pipe') || lower.contains('leak') || lower.contains('drain') || lower.contains('tap')) {
+      return 'Plumber';
+    }
+    if (lower.contains('ac') || lower.contains('cooling') || lower.contains('air') || lower.contains('compressor')) {
       return 'AC Repair';
     }
-    if (lower.contains('clean')) return 'Cleaning';
-    if (lower.contains('tutor') || lower.contains('teach')) return 'Tutor';
-    if (lower.contains('beaut') || lower.contains('makeup') || lower.contains('salon')) {
+    if (lower.contains('clean') || lower.contains('safai') || lower.contains('sofa') || lower.contains('carpet')) {
+      return 'Cleaning';
+    }
+    if (lower.contains('tutor') || lower.contains('teach') || lower.contains('study') || lower.contains('math')) {
+      return 'Tutor';
+    }
+    if (lower.contains('beaut') || lower.contains('makeup') || lower.contains('salon') || lower.contains('mehndi')) {
       return 'Beautician';
     }
     return 'General';
@@ -198,14 +217,185 @@ class GeminiService {
 
   String _generateOfflineChatResponse(String userMessage) {
     final lower = userMessage.toLowerCase();
-    if (lower.contains('ac') || lower.contains('cooling') || lower.contains('thanda')) {
-      return 'AC problems during warm weather are frustrating! It might be a low refrigerant gas level, a clogged air filter, or an issue with the outdoor compressor. Would you like me to connect you with a verified AC technician nearby?';
-    } else if (lower.contains('bijli') || lower.contains('electric') || lower.contains('breaker') || lower.contains('wiring')) {
-      return 'Electrical safety is very important. If a breaker is tripping or you smell burning wires, please turn off the main switch immediately. We have licensed Electricians nearby who can inspect and fix the fault safely.';
-    } else if (lower.contains('pani') || lower.contains('plumb') || lower.contains('leak') || lower.contains('pipe')) {
-      return 'Plumbing leaks can damage walls and flooring quickly. Try shutting off the local water valve if possible. I can dispatch a top-rated Plumber to your location right away.';
-    } else {
-      return 'Assalamu Alaikum! I am here to help you get the best verified local technician in Islamabad and nearby areas. Tell me what service you need (e.g. Electrician, Plumber, AC Repair, Cleaning) or describe the issue!';
+
+    // Extract budget if mentioned
+    int? budget;
+    final budgetPatterns = [
+      RegExp(r'(?:budget|offer|rs\.?|pkr|rupay|rupees)\s*[:=]?\s*(\d{2,6})', caseSensitive: false),
+      RegExp(r'(\d{2,6})\s*(?:rs\.?|pkr|rupay|rupees|rp|mein|me|ma\b)', caseSensitive: false),
+    ];
+    for (final pattern in budgetPatterns) {
+      final matches = pattern.allMatches(userMessage);
+      for (final m in matches) {
+        final str = m.group(1);
+        if (str != null) {
+          final val = int.tryParse(str);
+          if (val != null && val >= 50 && val <= 100000) {
+            budget = val;
+            break;
+          }
+        }
+      }
+      if (budget != null) break;
     }
+
+    // Check Plumber / Plumbing terms
+    final isPlumber = lower.contains('plumb') ||
+        lower.contains('pani') ||
+        lower.contains('paani') ||
+        lower.contains('nal') ||
+        lower.contains('nalka') ||
+        lower.contains('leak') ||
+        lower.contains('pipe') ||
+        lower.contains('drain') ||
+        lower.contains('sink') ||
+        lower.contains('washroom') ||
+        lower.contains('toilet') ||
+        lower.contains('commode') ||
+        lower.contains('tap') ||
+        lower.contains('toti') ||
+        lower.contains('geyser') ||
+        lower.contains('tanki') ||
+        lower.contains('basin') ||
+        lower.contains('flush') ||
+        lower.contains('faucet') ||
+        lower.contains('sanitary') ||
+        lower.contains('sewerage') ||
+        lower.contains('motor') ||
+        lower.contains('gutter') ||
+        lower.contains('پانی') ||
+        lower.contains('لیک') ||
+        lower.contains('نل') ||
+        lower.contains('سنک') ||
+        lower.contains('واشروم') ||
+        lower.contains('ٹونٹی') ||
+        lower.contains('گیزر') ||
+        lower.contains('کموڈ') ||
+        lower.contains('ٹائلٹ') ||
+        lower.contains('بیسن') ||
+        lower.contains('پلمبر');
+
+    if (isPlumber) {
+      if (budget != null) {
+        return 'Washroom sink ya plumbing fittings theek karne ke liye certified Plumber darkaar hota hai jo leaks theek kar sake aur pipe ya drain fittings set kare.\n\n'
+            'Aapka offer Rs. $budget note kar liya hai! Market mein visit charges aam tor par Rs. 500-600 se shuru hote hain, lekin aap hamare verified plumbers se direct negotiate kar sakte hain ya apna offer bhej sakte hain.\n\n'
+            'Neeche diye gaye button par tap karein taake verified Plumbers explore kar ke apna offer bhej sakein!';
+      } else {
+        return 'Plumbing leaks and washroom issues can damage walls quickly! Try shutting off the local water valve if possible. I can connect you with top-rated verified Plumbers in your area to inspect and fix the fault.';
+      }
+    }
+
+    // Check Electrician terms
+    final isElectrician = lower.contains('bijli') ||
+        lower.contains('batti') ||
+        lower.contains('electric') ||
+        lower.contains('breaker') ||
+        lower.contains('wire') ||
+        lower.contains('wiring') ||
+        lower.contains('fan') ||
+        lower.contains('pankha') ||
+        lower.contains('light') ||
+        lower.contains('switch') ||
+        lower.contains('socket') ||
+        lower.contains('fuse') ||
+        lower.contains('inverter') ||
+        lower.contains('generator') ||
+        lower.contains('ups') ||
+        lower.contains('short circuit') ||
+        lower.contains('spark') ||
+        lower.contains('bulb') ||
+        lower.contains('بجلی') ||
+        lower.contains('پنکھا') ||
+        lower.contains('سوئچ') ||
+        lower.contains('شارٹ سرکٹ') ||
+        lower.contains('الیکٹریشن');
+
+    if (isElectrician) {
+      if (budget != null) {
+        return 'Bijli ka masla ya wiring repair ke liye licensed Electrician darkaar hota hai.\n\n'
+            'Aapka offer Rs. $budget note kar liya hai! Aam tor par electrician inspection charges Rs. 600-700 se shuru hote hain, lekin aap hamare certified technicians ko apna offer bhej kar negotiate kar sakte hain.\n\n'
+            'Neeche diye gaye button par tap karein!';
+      } else {
+        return 'Electrical safety is very important. If a breaker is tripping or you smell burning wires, please turn off the main switch immediately. We have licensed Electricians nearby who can inspect and fix the fault safely.';
+      }
+    }
+
+    // Check AC Repair terms
+    final isAc = lower.contains('ac') ||
+        lower.contains('air conditioner') ||
+        lower.contains('cooling') ||
+        lower.contains('thanda') ||
+        lower.contains('compressor') ||
+        lower.contains('gas leak') ||
+        lower.contains('gas charge') ||
+        lower.contains('split') ||
+        lower.contains('inverter ac') ||
+        lower.contains('اے سی') ||
+        lower.contains('ٹھنڈا') ||
+        lower.contains('کولنگ');
+
+    if (isAc) {
+      if (budget != null) {
+        return 'AC cooling ya gas leak issue ke liye specialized AC technician ki zaroorat hoti hai.\n\n'
+            'Aapka offer Rs. $budget note kar liya hai. Aam tor par AC general service Rs. 1000-1500 se shuru hoti hai, lekin aap verified technicians ko apna offer bhej sakte hain.\n\n'
+            'Neeche button par tap karein!';
+      } else {
+        return 'AC problems during warm weather are frustrating! It might be a low refrigerant gas level, a clogged air filter, or an issue with the outdoor compressor. Would you like me to connect you with a verified AC technician nearby?';
+      }
+    }
+
+    // Check Cleaning terms
+    final isCleaning = lower.contains('clean') ||
+        lower.contains('safai') ||
+        lower.contains('dust') ||
+        lower.contains('deep clean') ||
+        lower.contains('sofa') ||
+        lower.contains('carpet') ||
+        lower.contains('tanki safai') ||
+        lower.contains('صفائی') ||
+        lower.contains('کارپٹ') ||
+        lower.contains('صوفہ');
+
+    if (isCleaning) {
+      if (budget != null) {
+        return 'Ghar ki deep cleaning, sofa ya carpet wash ke liye verified cleaning experts available hain.\n\n'
+            'Aapka offer Rs. $budget note kar liya hai. Neeche diye gaye button par tap kar ke verified cleaning specialists ko apna offer bhejain!';
+      } else {
+        return 'A clean home brings peace of mind! We offer deep cleaning, sofa and carpet shampooing, and water tank sanitization. Would you like to view top-rated cleaners in your area?';
+      }
+    }
+
+    // Check Tutor terms
+    final isTutor = lower.contains('tutor') ||
+        lower.contains('teacher') ||
+        lower.contains('ustad') ||
+        lower.contains('ustaad') ||
+        lower.contains('math') ||
+        lower.contains('study') ||
+        lower.contains('parhai') ||
+        lower.contains('tuition') ||
+        lower.contains('استاد') ||
+        lower.contains('پڑھائی') ||
+        lower.contains('ٹیوشن');
+
+    if (isTutor) {
+      return 'Home tutoring helps students excel in academics! We have qualified tutors for Mathematics, Science, English, and Matric/FSc. Would you like me to find verified tutors near your location?';
+    }
+
+    // Check Beautician terms
+    final isBeautician = lower.contains('beauty') ||
+        lower.contains('makeup') ||
+        lower.contains('salon') ||
+        lower.contains('bridal') ||
+        lower.contains('mehndi') ||
+        lower.contains('بیوٹی') ||
+        lower.contains('میک اپ') ||
+        lower.contains('مہندی');
+
+    if (isBeautician) {
+      return 'Looking for beauty and grooming services at home? Our verified beauticians provide bridal makeup, mehndi, facials, and hair styling. Would you like to explore available beauticians?';
+    }
+
+    return 'Assalamu Alaikum! I am here to help you get the best verified local technician in Islamabad and nearby areas. Tell me what service you need (e.g. Electrician, Plumber for washroom sink/leaks, AC Repair, Cleaning) or describe the issue!';
   }
 }

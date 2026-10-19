@@ -487,6 +487,7 @@ class AIChatMessage {
     required this.timestamp,
     this.suggestedRole,
     this.suggestedAction,
+    this.suggestedBudget,
   });
 
   final String id;
@@ -495,6 +496,7 @@ class AIChatMessage {
   final DateTime timestamp;
   final String? suggestedRole;
   final String? suggestedAction;
+  final int? suggestedBudget;
 }
 
 class EmergencyRequest {

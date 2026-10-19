@@ -96,7 +96,7 @@ class UstaadState extends ChangeNotifier {
   }
 
   void setUserOffer(int amount) {
-    userOffer = amount.clamp(200, 20000);
+    userOffer = amount.clamp(50, 50000);
     if (intent != null) {
       rankedProviders = _rankProviders(intent!, offer: userOffer);
       if (selectedProvider != null) {
@@ -855,6 +855,13 @@ class UstaadState extends ChangeNotifier {
 
     final quickIntent = _inferIntent(clean, lastLocation);
     final hasRole = quickIntent.role != 'General';
+    final budget = quickIntent.userBudget;
+
+    final actionLabel = hasRole
+        ? (budget != null
+            ? 'Find ${quickIntent.role}s (Offer: Rs. $budget)'
+            : 'Find ${quickIntent.role}s')
+        : null;
 
     final aiMsg = AIChatMessage(
       id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
@@ -862,7 +869,8 @@ class UstaadState extends ChangeNotifier {
       isUser: false,
       timestamp: DateTime.now(),
       suggestedRole: hasRole ? quickIntent.role : null,
-      suggestedAction: hasRole ? 'Find ${quickIntent.role}s' : null,
+      suggestedAction: actionLabel,
+      suggestedBudget: budget,
     );
 
     chatMessages = [...chatMessages, aiMsg];
@@ -1139,100 +1147,230 @@ class UstaadState extends ChangeNotifier {
       'bijli',
       'batti',
       'electric',
+      'electrician',
       'wire',
       'wiring',
       'breaker',
-      '\u0628\u062c\u0644\u06cc',
-      '\u0628\u062a\u06cc',
-      '\u0644\u0627\u0626\u0679',
-      '\u0648\u0627\u0626\u0631',
-      '\u062a\u0627\u0631',
-      '\u0628\u0631\u06cc\u06a9\u0631',
+      'fan',
+      'pankha',
+      'light',
+      'switch',
+      'socket',
+      'fuse',
+      'inverter',
+      'generator',
+      'ups',
+      'short circuit',
+      'spark',
+      'sparking',
+      'board',
+      'voltage',
+      'bulb',
+      'tube light',
+      'chula',
+      'heater',
+      'main switch',
       'بجلی',
+      'بتی',
+      'لائٹ',
       'وائر',
+      'تار',
+      'بریکر',
+      'پنکھا',
+      'سوئچ',
+      'ساکٹ',
+      'فیوز',
+      'یو پی ایس',
+      'جنریٹر',
+      'شارٹ سرکٹ',
+      'بلب',
+      'الیکٹریشن',
     ])) {
       role = 'Electrician';
-      description = 'Electrical Repair';
+      if (_containsAny(value, ['breaker', 'short circuit', 'spark', 'بریکر', 'شارٹ سرکٹ'])) {
+        description = 'Breaker & Short Circuit Fault';
+      } else if (_containsAny(value, ['fan', 'pankha', 'پنکھا'])) {
+        description = 'Ceiling Fan Service & Repair';
+      } else if (_containsAny(value, ['wire', 'wiring', 'تار', 'وائر'])) {
+        description = 'Wiring Inspection & Repair';
+      } else {
+        description = 'Electrical Repair';
+      }
     } else if (_containsAny(value, [
       'plumb',
+      'plumber',
       'pani',
+      'paani',
       'nal',
+      'nalka',
       'leak',
+      'leakage',
       'pipe',
       'drain',
-      '\u067e\u0627\u0646\u06cc',
-      '\u0644\u06cc\u06a9',
-      '\u0646\u0644',
-      '\u067e\u0627\u0626\u067e',
-      '\u06af\u0679\u0631',
+      'gutter',
+      'drainage',
+      'sink',
+      'washroom',
+      'toilet',
+      'commode',
+      'tap',
+      'toti',
+      'geyser',
+      'tanki',
+      'water tank',
+      'basin',
+      'flush',
+      'faucet',
+      'sanitary',
+      'sewerage',
+      'motor',
+      'water pump',
+      'boring',
+      'submersible',
+      'fitting',
       'پانی',
       'لیک',
       'نل',
+      'نلکا',
+      'پائپ',
+      'گٹر',
+      'سنک',
+      'واشروم',
+      'ٹونٹی',
+      'گیزر',
+      'کموڈ',
+      'ٹائلٹ',
+      'بیسن',
+      'موٹر',
+      'پلمبر',
+      'فلیش',
+      'سیوریج',
+      'سینیٹری',
+      'پمپ',
     ])) {
       role = 'Plumber';
-      description = 'Plumbing Issue';
+      if (_containsAny(value, ['sink', 'washroom', 'toilet', 'basin', 'commode', 'سنک', 'واشروم', 'بیسن'])) {
+        description = 'Washroom Sink & Plumbing Repair';
+      } else if (_containsAny(value, ['geyser', 'tanki', 'گیزر'])) {
+        description = 'Geyser & Water Tank Maintenance';
+      } else if (_containsAny(value, ['drain', 'gutter', 'sewerage', 'گٹر', 'سیوریج'])) {
+        description = 'Drainage & Sewerage Clearance';
+      } else if (_containsAny(value, ['motor', 'pump', 'موٹر', 'پمپ'])) {
+        description = 'Water Pump & Motor Repair';
+      } else {
+        description = 'Plumbing Issue & Leak Fix';
+      }
     } else if (_containsAny(value, [
       'ac',
+      'air conditioner',
       'cooling',
       'thanda',
       'compressor',
-      '\u0627\u06d2 \u0633\u06cc',
-      '\u0627\u06cc\u0631 \u06a9\u0646\u0688\u06cc\u0634\u0646\u0631',
-      '\u0679\u06be\u0646\u0688\u0627',
-      '\u06a9\u0648\u0644\u0646\u06af',
-      '\u06a9\u0645\u067e\u0631\u06cc\u0633\u0631',
+      'gas leak',
+      'gas charge',
+      'split',
+      'chilled',
+      'inverter ac',
+      'ac service',
+      'heating',
+      'remote',
+      'filter',
+      'outdoor',
       'اے سی',
+      'ایئر کنڈیشنر',
       'ٹھنڈا',
+      'کولنگ',
+      'کمپریسر',
+      'گیس',
     ])) {
       role = 'AC Repair';
-      description = 'AC Maintenance';
+      if (_containsAny(value, ['gas', 'گیس'])) {
+        description = 'AC Gas Refill & Leak Check';
+      } else if (_containsAny(value, ['cooling', 'thanda', 'کولنگ', 'ٹھنڈا'])) {
+        description = 'AC Cooling Fault Troubleshooting';
+      } else {
+        description = 'AC Service & Maintenance';
+      }
     } else if (_containsAny(value, [
       'clean',
+      'cleaning',
       'safai',
+      'safayi',
       'dust',
       'deep clean',
-      '\u0635\u0641\u0627\u0626\u06cc',
-      '\u0635\u0627\u0641',
-      '\u06af\u0631\u062f',
-      '\u062f\u06be\u0648\u0644',
+      'sofa',
+      'carpet',
+      'kitchen cleaning',
+      'washroom cleaning',
+      'floor cleaning',
+      'mattress',
+      'curtain',
+      'water tank cleaning',
+      'tanki safai',
+      'dhulai',
       'صفائی',
+      'صاف',
+      'گرد',
+      'دھول',
+      'کارپٹ',
+      'صوفہ',
+      'دھلائی',
     ])) {
       role = 'Cleaning';
-      description = 'Cleaning Request';
+      if (_containsAny(value, ['sofa', 'carpet', 'صوفہ', 'کارپٹ'])) {
+        description = 'Sofa & Carpet Deep Cleaning';
+      } else if (_containsAny(value, ['tanki', 'water tank'])) {
+        description = 'Water Tank Cleaning & Sanitization';
+      } else {
+        description = 'Deep Cleaning Request';
+      }
     } else if (_containsAny(value, [
       'tutor',
       'teacher',
       'ustad',
       'ustaad',
       'math',
+      'maths',
       'study',
       'parhai',
-      '\u0627\u0633\u062a\u0627\u062f',
-      '\u0679\u06cc\u0686\u0631',
-      '\u067e\u0691\u06be\u0627\u0626\u06cc',
-      '\u067e\u0691\u06be\u0627\u0646\u0627',
-      '\u0631\u06cc\u0627\u0636\u06cc',
+      'parhana',
+      'tuition',
+      'physics',
+      'english',
+      'matric',
+      'fsc',
+      'science',
       'استاد',
+      'ٹیچر',
       'پڑھائی',
+      'پڑھانا',
+      'ریاضی',
+      'ٹیوشن',
     ])) {
       role = 'Tutor';
       description = 'Tutoring Session';
     } else if (_containsAny(value, [
       'beauty',
       'makeup',
+      'make up',
       'salon',
+      'parlour',
       'bridal',
       'mehndi',
-      '\u0628\u06cc\u0648\u0679\u06cc',
-      '\u0645\u06cc\u06a9 \u0627\u067e',
-      '\u0633\u06cc\u0644\u0648\u0646',
-      '\u0645\u06c1\u0646\u062f\u06cc',
-      '\u062f\u0644\u06c1\u0646',
+      'haircut',
+      'facial',
+      'waxing',
+      'manicure',
+      'pedicure',
       'بیوٹی',
       'میک اپ',
+      'سیلون',
+      'مہندی',
+      'دلہن',
+      'پارلر',
     ])) {
       role = 'Beautician';
-      description = 'Beauty Service';
+      description = 'Beauty Service & Grooming';
     }
 
     final urgency = _containsAny(value, [
@@ -1241,12 +1379,17 @@ class UstaadState extends ChangeNotifier {
       'emergency',
       'jaldi',
       'foran',
-      '\u0641\u0648\u0631\u0627\u064b',
-      '\u0641\u0648\u0631\u0627',
-      '\u062c\u0644\u062f\u06cc',
-      '\u0627\u06cc\u0645\u0631\u062c\u0646\u0633\u06cc',
+      'theek',
+      'kharab',
+      'toot',
+      'tota',
+      'leakage',
+      'sparks',
+      'danger',
       'فوراً',
       'جلدی',
+      'خراب',
+      'ٹوٹ',
     ])
         ? 'High'
         : 'Normal';
@@ -1254,19 +1397,23 @@ class UstaadState extends ChangeNotifier {
     final language = _inferLanguage(problem);
 
     int? extractedBudget;
-    final budgetMatches = RegExp(
-      r'(?:budget|offer|rs\.?|pkr|rupay|rupees|mein)?\s*[:=]?\s*(\d{3,5})\s*(?:rs\.?|pkr|rupay|rupees|mein)?',
-      caseSensitive: false,
-    ).allMatches(problem);
-    for (final m in budgetMatches) {
-      final str = m.group(1);
-      if (str != null) {
-        final val = int.tryParse(str);
-        if (val != null && val >= 200 && val <= 25000) {
-          extractedBudget = val;
-          break;
+    final budgetPatterns = [
+      RegExp(r'(?:budget|offer|rs\.?|pkr|rupay|rupees)\s*[:=]?\s*(\d{2,6})', caseSensitive: false),
+      RegExp(r'(\d{2,6})\s*(?:rs\.?|pkr|rupay|rupees|rp|mein|me|ma\b)', caseSensitive: false),
+    ];
+    for (final pattern in budgetPatterns) {
+      final matches = pattern.allMatches(problem);
+      for (final m in matches) {
+        final str = m.group(1);
+        if (str != null) {
+          final val = int.tryParse(str);
+          if (val != null && val >= 50 && val <= 100000) {
+            extractedBudget = val;
+            break;
+          }
         }
       }
+      if (extractedBudget != null) break;
     }
 
     return ServiceIntent(

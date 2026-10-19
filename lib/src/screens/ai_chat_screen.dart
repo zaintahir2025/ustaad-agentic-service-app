@@ -38,6 +38,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
   void _showApiKeyDialog(BuildContext context) {
     final state = context.read<UstaadState>();
     final keyCtrl = TextEditingController(text: state.aiRouter.apiKey);
+    final geminiCtrl = TextEditingController(text: state.aiRouter.geminiApiKey);
     final modelCtrl = TextEditingController(text: state.aiRouter.model);
     final urlCtrl = TextEditingController(text: state.aiRouter.apiUrl);
 
@@ -45,7 +46,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Cloud AI Configuration'),
+          title: const Text('AI Engine Configuration'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -53,14 +54,30 @@ class _AIChatScreenState extends State<AIChatScreen> {
               children: [
                 const Text(
                   'Ustaad operates on a resilient 3-tier architecture:\n'
-                  '1. Cloud AI: OpenRouter (DeepSeek)\n'
+                  '1. Cloud AI: OpenRouter (DeepSeek) or Google Gemini 1.5 Flash\n'
                   '2. On-Device AI: Llama (GGUF via llamadart)\n'
                   '3. Safety Net: On-Device Heuristic Engine',
                   style: TextStyle(fontSize: 12.5),
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Cloud AI API Key (OpenRouter)',
+                  'Google Gemini API Key',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: geminiCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Gemini API Key',
+                    hintText: 'AIzaSy...',
+                    prefixIcon: Icon(Icons.auto_awesome),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'OpenRouter / DeepSeek API Key',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
                 const SizedBox(height: 6),
@@ -68,7 +85,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                   controller: keyCtrl,
                   obscureText: true,
                   decoration: const InputDecoration(
-                    labelText: 'OpenRouter API Key',
+                    labelText: 'OpenRouter Key',
                     hintText: 'sk-or-v1-...',
                     prefixIcon: Icon(Icons.key),
                     isDense: true,
@@ -78,7 +95,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                 TextField(
                   controller: modelCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Model Name',
+                    labelText: 'OpenRouter Model',
                     hintText: 'deepseek/deepseek-chat',
                     prefixIcon: Icon(Icons.psychology),
                     isDense: true,
@@ -101,17 +118,26 @@ class _AIChatScreenState extends State<AIChatScreen> {
             TextButton(
               onPressed: () {
                 state.setCloudApiKey('');
+                state.aiRouter.setGeminiApiKey('');
                 Navigator.of(dialogContext).pop();
               },
-              child: const Text('Clear Key'),
+              child: const Text('Clear Keys'),
             ),
             FilledButton(
               onPressed: () {
-                state.setSecondaryEngineConfig(
-                  url: urlCtrl.text,
-                  key: keyCtrl.text,
-                  model: modelCtrl.text,
-                );
+                final geminiVal = geminiCtrl.text.trim();
+                final openRouterVal = keyCtrl.text.trim();
+
+                if (geminiVal.isNotEmpty) {
+                  state.aiRouter.setGeminiApiKey(geminiVal);
+                }
+                if (openRouterVal.isNotEmpty) {
+                  state.setSecondaryEngineConfig(
+                    url: urlCtrl.text,
+                    key: openRouterVal,
+                    model: modelCtrl.text,
+                  );
+                }
                 Navigator.of(dialogContext).pop();
               },
               child: const Text('Save Settings'),
@@ -173,6 +199,48 @@ class _AIChatScreenState extends State<AIChatScreen> {
             showNav: true,
           ),
           const SizedBox(height: 12),
+          if (!hasCloud) ...[
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _showApiKeyDialog(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(22),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withAlpha(55),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.shield_outlined,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Using On-Device Safety Net. Tap here to add an OpenRouter or Gemini API key for full AI reasoning.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.tune,
+                      size: 15,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Container(
             height: 480,
             decoration: BoxDecoration(
@@ -319,6 +387,7 @@ class ChatMessageBubble extends StatelessWidget {
                         context.read<UstaadState>().startAnalysis(
                               '${message.suggestedRole} required',
                               context.read<UstaadState>().lastLocation,
+                              initialOffer: message.suggestedBudget,
                             );
                       },
                       icon: const Icon(Icons.handyman, size: 16),
