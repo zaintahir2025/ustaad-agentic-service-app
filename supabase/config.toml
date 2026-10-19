@@ -1,0 +1,4 @@
+project_id = "ustaad-service-app"
+
+[functions.llm-proxy]
+verify_jwt = false

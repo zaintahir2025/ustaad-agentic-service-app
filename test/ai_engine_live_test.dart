@@ -24,13 +24,13 @@ void main() {
     });
 
     test('OpenRouter API key format validation (when configured)', () {
-      if (openRouterKey.isNotEmpty) {
+      if (openRouterKey.isNotEmpty && !openRouterKey.contains('your_openrouter')) {
         expect(openRouterKey.startsWith('sk-or-v1-'), isTrue);
       }
     });
 
     test('Rung 1: Live Cloud AI successfully extracts structured intent and validates schema', () async {
-      if (openRouterKey.isEmpty) return;
+      if (openRouterKey.isEmpty || openRouterKey.contains('your_openrouter')) return;
 
       final router = AIEngineRouter(apiKey: openRouterKey);
       expect(router.hasCloudKey, isTrue);
@@ -65,7 +65,7 @@ void main() {
     }, timeout: const Timeout(Duration(seconds: 45)));
 
     test('Rung 1: Live Cloud AI handles conversational chat successfully', () async {
-      if (openRouterKey.isEmpty) return;
+      if (openRouterKey.isEmpty || openRouterKey.contains('your_openrouter')) return;
 
       final router = AIEngineRouter(apiKey: openRouterKey);
 

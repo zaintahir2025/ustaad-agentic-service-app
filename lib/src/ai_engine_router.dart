@@ -44,6 +44,7 @@ class AIEngineRouter {
     String? apiKey,
     String? apiUrl,
     String? model,
+    String? proxyUrl,
     String? localLlamaModelPath,
     LlamaEngine? llamaEngine,
     // Backward-compatibility parameter aliases
@@ -70,6 +71,10 @@ class AIEngineRouter {
             defaultValue: String.fromEnvironment('SECONDARY_AI_MODEL',
                 defaultValue: 'deepseek/deepseek-chat'));
 
+    _proxyUrl = proxyUrl ??
+        const String.fromEnvironment('AI_PROXY_URL',
+            defaultValue: String.fromEnvironment('BACKEND_PROXY_URL', defaultValue: ''));
+
     _geminiApiKey = geminiApiKey ??
         const String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
 
@@ -90,6 +95,7 @@ class AIEngineRouter {
 
   String _apiKey = '';
   String _apiUrl = 'https://openrouter.ai/api/v1';
+  String _proxyUrl = '';
   String _model = 'deepseek/deepseek-chat';
   String _geminiApiKey = '';
   late final GeminiService _geminiService;
@@ -102,6 +108,7 @@ class AIEngineRouter {
 
   String get apiKey => _apiKey;
   String get apiUrl => _apiUrl;
+  String get proxyUrl => _proxyUrl;
   String get model => _model;
   String get localLlamaModelPath => _localLlamaModelPath;
   bool get isLlamaInitialized => _isLlamaInitialized;
@@ -112,11 +119,13 @@ class AIEngineRouter {
   String get secondaryApiUrl => _apiUrl;
   String get secondaryModel => _model;
   String get geminiApiKey => _geminiApiKey;
-  bool get hasGemini => _geminiApiKey.trim().isNotEmpty;
+  bool get hasGemini => _geminiApiKey.trim().isNotEmpty && !_geminiApiKey.contains('REPLACE');
   bool get hasSecondary => hasCloudKey;
+  bool get hasProxy => _proxyUrl.trim().isNotEmpty;
 
   bool get hasCloudKey =>
-      (_apiKey.trim().isNotEmpty && !_apiKey.startsWith('AIza')) ||
+      hasProxy ||
+      (_apiKey.trim().isNotEmpty && !_apiKey.startsWith('AIza') && !_apiKey.contains('your_openrouter')) ||
       hasGemini ||
       _apiUrl.contains('localhost');
   bool get hasLocalLlama => _isLlamaInitialized || _localLlamaModelPath.trim().isNotEmpty;
@@ -146,8 +155,12 @@ class AIEngineRouter {
       await _geminiService.setApiKey(_geminiApiKey);
     }
 
+    if (_proxyUrl.isEmpty) {
+      _proxyUrl = prefs.getString('ustaad_ai_proxy_url') ?? '';
+    }
+
     // Fallback: If no key in SharedPreferences or environment, check local .env file
-    if (!kIsWeb && _apiKey.isEmpty && _geminiApiKey.isEmpty) {
+    if (!kIsWeb && _apiKey.isEmpty && _geminiApiKey.isEmpty && _proxyUrl.isEmpty) {
       try {
         final envFile = File('.env');
         if (await envFile.exists()) {
@@ -156,12 +169,17 @@ class AIEngineRouter {
             final trimmed = line.trim();
             if (trimmed.startsWith('OPENROUTER_API_KEY=')) {
               final keyVal = trimmed.substring('OPENROUTER_API_KEY='.length).trim();
-              if (keyVal.isNotEmpty) {
+              if (keyVal.isNotEmpty && !keyVal.contains('your_openrouter')) {
                 _apiKey = keyVal;
+              }
+            } else if (trimmed.startsWith('AI_PROXY_URL=') || trimmed.startsWith('BACKEND_PROXY_URL=')) {
+              final proxyVal = trimmed.split('=').sublist(1).join('=').trim();
+              if (proxyVal.isNotEmpty && !proxyVal.contains('your-project-ref')) {
+                _proxyUrl = proxyVal;
               }
             } else if (trimmed.startsWith('GEMINI_API_KEY=')) {
               final keyVal = trimmed.substring('GEMINI_API_KEY='.length).trim();
-              if (keyVal.isNotEmpty) {
+              if (keyVal.isNotEmpty && !keyVal.contains('REPLACE')) {
                 _geminiApiKey = keyVal;
                 await _geminiService.setApiKey(_geminiApiKey);
               }
@@ -190,11 +208,12 @@ class AIEngineRouter {
     }
   }
 
-  /// Sets Cloud AI configuration (OpenRouter / DeepSeek or auto-detected Gemini).
+  /// Sets Cloud AI configuration (OpenRouter / DeepSeek, Backend Proxy, or auto-detected Gemini).
   Future<void> setCloudConfig({
     required String key,
     String? url,
     String? model,
+    String? proxyUrl,
   }) async {
     final trimmedKey = key.trim();
     if (trimmedKey.startsWith('AIza')) {
@@ -205,6 +224,12 @@ class AIEngineRouter {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('ustaad_openrouter_api_key', _apiKey);
       await prefs.setString('ustaad_secondary_api_key', _apiKey);
+    }
+
+    if (proxyUrl != null) {
+      _proxyUrl = proxyUrl.trim();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ustaad_ai_proxy_url', _proxyUrl);
     }
 
     if (url != null && url.trim().isNotEmpty) _apiUrl = url.trim();
@@ -281,11 +306,12 @@ class AIEngineRouter {
     final reasoningSteps = <String>[];
 
     // -------------------------------------------------------------
-    // RUNG 1: Primary Cloud Engine (OpenRouter: DeepSeek)
+    // RUNG 1: Primary Cloud Engine (OpenRouter: DeepSeek or Backend Proxy)
     // -------------------------------------------------------------
-    if (_apiKey.trim().isNotEmpty && !_apiKey.startsWith('AIza')) {
+    if (hasProxy || (_apiKey.trim().isNotEmpty && !_apiKey.startsWith('AIza') && !_apiKey.contains('your_openrouter'))) {
+      final engineLabel = hasProxy ? 'Backend Proxy' : 'Cloud AI ($_model)';
       try {
-        auditLog.add('Ladder Rung 1 [Cloud AI ($_model)]: Attempting extraction...');
+        auditLog.add('Ladder Rung 1 [$engineLabel]: Attempting extraction...');
         final rawJson = await _callOpenAICompatibleAPI(
           systemPrompt:
               'You are Ustaad AI in Pakistan. Extract service category into JSON: '
@@ -308,7 +334,7 @@ class AIEngineRouter {
           );
 
           if (validatedIntent != null) {
-            auditLog.add('Ladder Rung 1 [Cloud AI: $_model]: SUCCESS & VALIDATED.');
+            auditLog.add('Ladder Rung 1 [$engineLabel]: SUCCESS & VALIDATED.');
             return AIEngineResult(
               intent: validatedIntent,
               resolvedEngine: AIEngineType.openRouterCloud,
@@ -316,13 +342,13 @@ class AIEngineRouter {
               reasoningSteps: reasoningSteps,
             );
           }
-          auditLog.add('Ladder Rung 1 [Cloud AI: $_model]: Schema validation failed. Cascading...');
+          auditLog.add('Ladder Rung 1 [$engineLabel]: Schema validation failed. Cascading...');
         }
       } catch (e) {
-        auditLog.add('Ladder Rung 1 [Cloud AI: $_model] FAILED: $e. Cascading to Gemini / Llama...');
+        auditLog.add('Ladder Rung 1 [$engineLabel] FAILED: $e. Cascading to Gemini / Llama...');
       }
     } else {
-      auditLog.add('Ladder Rung 1 [Cloud AI]: Skipped (no OpenRouter API key configured).');
+      auditLog.add('Ladder Rung 1 [Cloud AI]: Skipped (no proxy or valid cloud API key configured).');
     }
 
     // -------------------------------------------------------------
@@ -427,8 +453,8 @@ class AIEngineRouter {
     required List<AIChatMessage> history,
     required String userMessage,
   }) async {
-    // 1. Try Cloud AI (OpenRouter: DeepSeek)
-    if (_apiKey.trim().isNotEmpty && !_apiKey.startsWith('AIza')) {
+    // 1. Try Cloud AI (OpenRouter: DeepSeek or Backend Proxy)
+    if (hasProxy || (_apiKey.trim().isNotEmpty && !_apiKey.startsWith('AIza') && !_apiKey.contains('your_openrouter'))) {
       try {
         final rawResponse = await _callOpenAICompatibleAPI(
           systemPrompt:
@@ -498,20 +524,21 @@ class AIEngineRouter {
     return _generateOfflineChatResponse(userMessage);
   }
 
-  /// Helper to call standard OpenAI-compatible API (OpenRouter, DeepSeek, Ollama, vLLM).
+  /// Helper to call standard OpenAI-compatible API (OpenRouter, DeepSeek, Ollama, vLLM, or Backend Proxy).
   Future<String?> _callOpenAICompatibleAPI({
     required String systemPrompt,
     required String userPrompt,
     required bool jsonMode,
   }) async {
-    final cleanUrl = _apiUrl.endsWith('/')
-        ? '${_apiUrl}chat/completions'
-        : '$_apiUrl/chat/completions';
+    final baseUrl = hasProxy ? _proxyUrl : _apiUrl;
+    final cleanUrl = baseUrl.endsWith('/chat/completions') || baseUrl.endsWith('/llm-proxy')
+        ? baseUrl
+        : (baseUrl.endsWith('/') ? '${baseUrl}chat/completions' : '$baseUrl/chat/completions');
 
     final uri = Uri.parse(cleanUrl);
     final headers = {
       'Content-Type': 'application/json',
-      if (_apiKey.isNotEmpty)
+      if (_apiKey.isNotEmpty && !_apiKey.contains('your_openrouter'))
         'Authorization': 'Bearer $_apiKey',
       'HTTP-Referer': 'https://ustaad.app',
       'X-Title': 'Ustaad Agentic App',

@@ -41,6 +41,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
     final geminiCtrl = TextEditingController(text: state.aiRouter.geminiApiKey);
     final modelCtrl = TextEditingController(text: state.aiRouter.model);
     final urlCtrl = TextEditingController(text: state.aiRouter.apiUrl);
+    final proxyCtrl = TextEditingController(text: state.aiRouter.proxyUrl);
 
     showDialog(
       context: context,
@@ -54,14 +55,29 @@ class _AIChatScreenState extends State<AIChatScreen> {
               children: [
                 const Text(
                   'Ustaad operates on a resilient 3-tier architecture:\n'
-                  '1. Cloud AI: OpenRouter (DeepSeek) or Google Gemini 1.5 Flash\n'
-                  '2. On-Device AI: Llama (GGUF via llamadart)\n'
+                  '1. Backend Proxy: Supabase Edge Function (shields secret keys)\n'
+                  '2. Cloud AI: OpenRouter (DeepSeek) or Google Gemini\n'
                   '3. Safety Net: On-Device Heuristic Engine',
                   style: TextStyle(fontSize: 12.5),
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Google Gemini API Key',
+                  'Backend Proxy URL (Recommended)',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: proxyCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Backend Proxy URL',
+                    hintText: 'https://<project-ref>.supabase.co/functions/v1/llm-proxy',
+                    prefixIcon: Icon(Icons.shield),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Direct Google Gemini API Key (Optional)',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
                 const SizedBox(height: 6),
@@ -77,7 +93,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'OpenRouter / DeepSeek API Key',
+                  'Direct OpenRouter API Key (Optional)',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
                 const SizedBox(height: 6),
@@ -119,25 +135,29 @@ class _AIChatScreenState extends State<AIChatScreen> {
               onPressed: () {
                 state.setCloudApiKey('');
                 state.aiRouter.setGeminiApiKey('');
+                state.setProxyUrl('');
                 Navigator.of(dialogContext).pop();
               },
-              child: const Text('Clear Keys'),
+              child: const Text('Clear Settings'),
             ),
             FilledButton(
               onPressed: () {
                 final geminiVal = geminiCtrl.text.trim();
                 final openRouterVal = keyCtrl.text.trim();
+                final proxyVal = proxyCtrl.text.trim();
 
+                if (proxyVal.isNotEmpty) {
+                  state.setProxyUrl(proxyVal);
+                }
                 if (geminiVal.isNotEmpty) {
                   state.aiRouter.setGeminiApiKey(geminiVal);
                 }
-                if (openRouterVal.isNotEmpty) {
-                  state.setSecondaryEngineConfig(
-                    url: urlCtrl.text,
-                    key: openRouterVal,
-                    model: modelCtrl.text,
-                  );
-                }
+                state.setSecondaryEngineConfig(
+                  url: urlCtrl.text,
+                  key: openRouterVal,
+                  model: modelCtrl.text,
+                  proxyUrl: proxyVal,
+                );
                 Navigator.of(dialogContext).pop();
               },
               child: const Text('Save Settings'),
@@ -162,9 +182,11 @@ class _AIChatScreenState extends State<AIChatScreen> {
     final theme = Theme.of(context);
     final hasCloud = state.aiRouter.hasCloudKey;
 
-    final ladderSubtitle = hasCloud
-        ? 'Failover: OpenRouter (${state.aiRouter.model}) ➔ On-Device Llama ➔ Safety Net'
-        : 'Safety Net: On-Device Heuristics';
+    final ladderSubtitle = state.aiRouter.hasProxy
+        ? 'Connected: Supabase Edge Proxy ➔ Safety Net'
+        : (hasCloud
+            ? 'Cloud AI: OpenRouter (${state.aiRouter.model}) ➔ Safety Net'
+            : 'Demo Mode: On-Device Heuristics Active');
 
     return Stage(
       wideMaxWidth: 760,
@@ -222,7 +244,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Using On-Device Safety Net. Tap here to add an OpenRouter or Gemini API key for full AI reasoning.',
+                        'Demo Mode: On-Device Triage Active. Tap to configure Backend Proxy URL or API key.',
                         style: TextStyle(
                           fontSize: 12,
                           color: theme.colorScheme.onSurface,

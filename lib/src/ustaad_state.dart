@@ -891,11 +891,21 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get isDemoMode => !aiRouter.hasCloudKey && !aiRouter.hasLocalLlama;
+
+  Future<void> setProxyUrl(String url) async {
+    await aiRouter.setCloudConfig(key: aiRouter.apiKey, proxyUrl: url);
+    bannerMessage = aiRouter.hasProxy
+        ? 'Backend AI proxy configured.'
+        : 'Backend AI proxy cleared.';
+    notifyListeners();
+  }
+
   Future<void> setCloudApiKey(String key) async {
     await aiRouter.setCloudConfig(key: key);
     bannerMessage = aiRouter.hasCloudKey
-        ? 'OpenRouter Cloud AI key configured.'
-        : 'Cloud AI key cleared (failover will use on-device Llama/heuristics).';
+        ? 'Cloud AI configured.'
+        : 'Cloud AI key cleared (failover will use on-device safety net).';
     notifyListeners();
   }
 
@@ -907,8 +917,9 @@ class UstaadState extends ChangeNotifier {
     required String url,
     required String key,
     required String model,
+    String? proxyUrl,
   }) async {
-    await aiRouter.setCloudConfig(url: url, key: key, model: model);
+    await aiRouter.setCloudConfig(url: url, key: key, model: model, proxyUrl: proxyUrl);
     bannerMessage = 'Cloud AI configuration saved.';
     notifyListeners();
   }
