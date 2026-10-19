@@ -49,6 +49,14 @@ class UstaadState extends ChangeNotifier {
   DateTime? sessionExpiresAt;
   ThemeMode themeMode = ThemeMode.dark;
   UstaadScreen screen = UstaadScreen.gateway;
+  UstaadScreen? requestedScreen;
+
+  void setScreen(UstaadScreen target) {
+    screen = target;
+    requestedScreen = target;
+    notifyListeners();
+  }
+
   UstaadUser? user;
   String selectedLanguage = 'English';
 
@@ -270,8 +278,7 @@ class UstaadState extends ChangeNotifier {
   }
 
   void openAIChat() {
-    screen = UstaadScreen.aiChat;
-    notifyListeners();
+    setScreen(UstaadScreen.aiChat);
   }
 
   ServiceIntent inferServiceIntent(String problem, String location) {
@@ -394,8 +401,7 @@ class UstaadState extends ChangeNotifier {
     );
     workflowEvents = _bookingWorkflowEvents(provider);
     bookingBusy = true;
-    screen = UstaadScreen.workflow;
-    notifyListeners();
+    setScreen(UstaadScreen.workflow);
 
     latestBooking = await _repository.createEmergencyBooking(
       provider: provider,
@@ -426,9 +432,8 @@ class UstaadState extends ChangeNotifier {
       await _rememberEmail(email, remember);
       await refreshBookings(silent: true);
       bannerMessage = 'Welcome back, ${user!.firstName}.';
-      screen = UstaadScreen.commandCenter;
       authBusy = false;
-      notifyListeners();
+      setScreen(UstaadScreen.commandCenter);
       return true;
     } on AuthException catch (error) {
       bannerMessage = error.message;
@@ -453,9 +458,8 @@ class UstaadState extends ChangeNotifier {
       passwordRecoveryActive = false;
       bookings = const [];
       bannerMessage = 'Guest mode active.';
-      screen = UstaadScreen.commandCenter;
       authBusy = false;
-      notifyListeners();
+      setScreen(UstaadScreen.commandCenter);
     } catch (e) {
       bannerMessage = 'Could not sign in as guest: $e';
       authBusy = false;
@@ -701,8 +705,7 @@ class UstaadState extends ChangeNotifier {
     bookings = const [];
     latestBooking = null;
     providerReviews = const {};
-    screen = UstaadScreen.gateway;
-    notifyListeners();
+    setScreen(UstaadScreen.gateway);
   }
 
   void _handleAuthEmailError(AuthException error, String email) {
@@ -750,19 +753,16 @@ class UstaadState extends ChangeNotifier {
   }
 
   void openHome() {
-    screen = UstaadScreen.commandCenter;
-    notifyListeners();
+    setScreen(UstaadScreen.commandCenter);
   }
 
   Future<void> openBookings() async {
-    screen = UstaadScreen.bookings;
-    notifyListeners();
+    setScreen(UstaadScreen.bookings);
     await refreshBookings();
   }
 
   void openProfile() {
-    screen = UstaadScreen.profile;
-    notifyListeners();
+    setScreen(UstaadScreen.profile);
   }
 
   Future<bool> saveProfile({
@@ -967,10 +967,9 @@ class UstaadState extends ChangeNotifier {
       offer: userOffer,
     );
     isAnalyzing = false;
-    screen = UstaadScreen.selection;
     addToRecentRequests(lastProblem, lastLocation);
     _checkAndUnlockAchievements();
-    notifyListeners();
+    setScreen(UstaadScreen.selection);
   }
 
   void previewProvider(UstaadProviderProfile provider) {
@@ -1002,8 +1001,7 @@ class UstaadState extends ChangeNotifier {
       rankedProviders,
       offer: userOffer,
     );
-    screen = UstaadScreen.selection;
-    notifyListeners();
+    setScreen(UstaadScreen.selection);
   }
 
   Future<void> bookProvider(UstaadProviderProfile provider) async {
@@ -1012,8 +1010,7 @@ class UstaadState extends ChangeNotifier {
     final bookingEvents = _bookingWorkflowEvents(provider);
     workflowEvents = bookingEvents;
     bookingBusy = true;
-    screen = UstaadScreen.workflow;
-    notifyListeners();
+    setScreen(UstaadScreen.workflow);
 
     try {
       latestBooking = await _repository.createBooking(

@@ -33,9 +33,11 @@ GoRouter createUstaadRouter(UstaadState state) {
         return '/';
       }
 
-      // 3. Sync programmatic state.screen transitions to URL
-      if (signedIn) {
-        final expectedLocation = switch (state.screen) {
+      // 3. Handle programmatic screen navigation requested from state
+      if (signedIn && state.requestedScreen != null) {
+        final target = state.requestedScreen!;
+        state.requestedScreen = null;
+        final targetPath = switch (target) {
           UstaadScreen.gateway => '/auth',
           UstaadScreen.commandCenter => '/',
           UstaadScreen.bookings => '/bookings',
@@ -44,9 +46,18 @@ GoRouter createUstaadRouter(UstaadState state) {
           UstaadScreen.workflow => '/workflow',
           UstaadScreen.aiChat => '/chat',
         };
+        if (location != targetPath) {
+          return targetPath;
+        }
+      }
 
-        if (location != expectedLocation) {
-          return expectedLocation;
+      // 4. Guard against deep linking into uninitialized selection or workflow
+      if (signedIn) {
+        if (location == '/selection' && (state.intent == null || state.quote == null)) {
+          return '/';
+        }
+        if (location == '/workflow' && state.selectedProvider == null) {
+          return '/';
         }
       }
 

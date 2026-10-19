@@ -1,12 +1,15 @@
 {
-    "name": "Ustaad",
+    "name": "Ustaad - AI Home Services",
     "short_name": "Ustaad",
-    "start_url": ".",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
     "background_color": "#101010",
     "theme_color": "#101010",
-    "description": "Book trusted local services.",
-    "orientation": "portrait-primary",
+    "description": "Book trusted, verified local technicians across Pakistan with InDrive-style transparent bidding.",
+    "orientation": "any",
+    "categories": ["lifestyle", "utilities", "business"],
+    "lang": "en",
     "prefer_related_applications": false,
     "icons": [
         {

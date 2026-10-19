@@ -39,7 +39,9 @@ jobs:
       - name: Build web
         run: |
           flutter build web --release --base-href "/ustaad-agentic-service-app/"
-          cp build/web/index.html build/web/404.html
+          if [ ! -f build/web/404.html ]; then
+            cp web/404.html build/web/404.html
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
