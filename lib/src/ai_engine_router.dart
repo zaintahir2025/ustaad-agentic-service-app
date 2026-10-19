@@ -88,8 +88,8 @@ class AIEngineRouter {
   LlamaEngine? _llamaEngine;
   bool _isLlamaInitialized = false;
 
-  static const Duration _cloudTimeout = Duration(seconds: 8);
-  static const Duration _llamaTimeout = Duration(seconds: 15);
+  static const Duration _cloudTimeout = Duration(seconds: 15);
+  static const Duration _llamaTimeout = Duration(seconds: 20);
 
   String get apiKey => _apiKey;
   String get apiUrl => _apiUrl;
@@ -255,6 +255,7 @@ class AIEngineRouter {
               '"description": "concise English summary", "urgency": "High"|"Normal", '
               '"location": "area or fallback", "timeLabel": "e.g. Immediate", '
               '"language": "Urdu"|"Roman Urdu"|"English", "confidence": 0.95, '
+              '"userBudget": 600, '
               '"reasoningSteps": ["step1", "step2"]}',
           userPrompt: 'User Request: "$problemText", Location: "$fallbackLocation"',
           jsonMode: true,
@@ -298,7 +299,7 @@ class AIEngineRouter {
             text: 'You are Ustaad AI, an on-device home service triage assistant in Pakistan. '
                 'Analyze the user request and return valid JSON with keys: '
                 '"role" ("Electrician"|"Plumber"|"AC Repair"|"Cleaning"|"Tutor"|"Beautician"|"General"), '
-                '"description", "urgency" ("High"|"Normal"), "location", "timeLabel", "language", "confidence", "reasoningSteps".',
+                '"description", "urgency" ("High"|"Normal"), "location", "timeLabel", "language", "confidence", "userBudget" (integer in PKR or null), "reasoningSteps".',
           ),
           LlamaChatMessage.fromText(
             role: LlamaChatRole.user,
@@ -494,6 +495,16 @@ class AIEngineRouter {
         );
       }
 
+      int? userBudget;
+      if (parsed['userBudget'] != null) {
+        if (parsed['userBudget'] is num) {
+          userBudget = (parsed['userBudget'] as num).toInt();
+        } else {
+          userBudget = int.tryParse(parsed['userBudget'].toString());
+        }
+      }
+      userBudget ??= localFallback.userBudget;
+
       return ServiceIntent(
         role: role,
         description: description,
@@ -502,6 +513,7 @@ class AIEngineRouter {
         timeLabel: timeLabel,
         language: language,
         confidence: confidence,
+        userBudget: userBudget,
       );
     } catch (_) {
       return null;

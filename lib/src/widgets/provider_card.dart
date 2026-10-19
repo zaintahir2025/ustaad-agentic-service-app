@@ -50,24 +50,71 @@ class _ProviderCardState extends State<ProviderCard> {
     final saved = state.isSavedProvider(provider.id);
     final score = (provider.score.clamp(0, 100)).toDouble() / 100;
     final reviews = state.providerReviews[provider.id] ?? const [];
+    final activeOffer = state.activeOffer;
+    final priceDiff = provider.price - activeOffer;
+    final isBelowOrEqual = priceDiff <= 0;
 
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.best) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Chip(
-                avatar: const Icon(Icons.auto_awesome, size: 16),
-                label: Text(
-                  AppLocalizations.of(context)?.bestMatch ?? 'Best match',
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (widget.best)
+                Chip(
+                  avatar: const Icon(Icons.auto_awesome, size: 16),
+                  label: Text(
+                    AppLocalizations.of(context)?.bestMatch ?? 'Best match',
+                  ),
+                  visualDensity: VisualDensity.compact,
                 ),
-                visualDensity: VisualDensity.compact,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isBelowOrEqual
+                      ? Colors.green.withValues(alpha: 0.12)
+                      : Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isBelowOrEqual
+                        ? Colors.green.withValues(alpha: 0.3)
+                        : Colors.orange.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isBelowOrEqual ? Icons.check_circle : Icons.swap_horiz,
+                      size: 14,
+                      color: isBelowOrEqual
+                          ? Colors.green.shade700
+                          : Colors.orange.shade800,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isBelowOrEqual
+                          ? (priceDiff < 0
+                              ? 'Offer matched (-Rs. ${-priceDiff})'
+                              : 'Exact offer match')
+                          : 'Counter: +Rs. $priceDiff',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: isBelowOrEqual
+                            ? Colors.green.shade800
+                            : Colors.orange.shade900,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-          ],
+            ],
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Avatar(url: provider.avatarUrl, size: 54),
@@ -127,14 +174,16 @@ class _ProviderCardState extends State<ProviderCard> {
           const SizedBox(height: 10),
           ReviewsPreview(providerId: provider.id, reviews: reviews),
           const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () =>
-                  context.read<UstaadState>().bookProvider(provider),
-              icon: const Icon(Icons.calendar_month),
-              label: Text(
-                AppLocalizations.of(context)?.bookSlot ?? 'Book slot',
-              ),
+          ElevatedButton.icon(
+            onPressed: () =>
+                context.read<UstaadState>().bookProvider(provider),
+            icon: const Icon(Icons.handshake),
+            label: Text(
+              isBelowOrEqual
+                  ? 'Accept Offer (Rs. ${provider.price})'
+                  : 'Accept Counter (Rs. ${provider.price})',
             ),
+          ),
         ],
       ),
     );

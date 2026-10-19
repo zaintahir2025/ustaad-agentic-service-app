@@ -75,6 +75,42 @@ class UstaadState extends ChangeNotifier {
   BookingRecord? latestBooking;
   ServiceIntent? intent;
   QuoteEstimate? quote;
+  int? userOffer;
+
+  int get activeOffer {
+    if (userOffer != null) return userOffer!;
+    if (intent?.userBudget != null) return intent!.userBudget!;
+    return defaultBudgetForRole(intent?.role ?? 'General');
+  }
+
+  static int defaultBudgetForRole(String role) {
+    return switch (role.toLowerCase()) {
+      'electrician' => 700,
+      'plumber' => 600,
+      'ac repair' => 1200,
+      'cleaning' => 900,
+      'tutor' => 800,
+      'beautician' => 1500,
+      _ => 600,
+    };
+  }
+
+  void setUserOffer(int amount) {
+    userOffer = amount.clamp(200, 20000);
+    if (intent != null) {
+      rankedProviders = _rankProviders(intent!, offer: userOffer);
+      if (selectedProvider != null) {
+        quote = _quoteFor(selectedProvider!, intent!, offer: userOffer);
+      }
+    }
+    notifyListeners();
+  }
+
+  void adjustUserOffer(int delta) {
+    final current = activeOffer;
+    setUserOffer(current + delta);
+  }
+
   List<WorkflowEvent> workflowEvents = const [];
   String lastProblem = '';
   String lastLocation = 'G-13, Islamabad';
@@ -869,7 +905,11 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> startAnalysis(String problem, String location) async {
+  Future<void> startAnalysis(
+    String problem,
+    String location, {
+    int? initialOffer,
+  }) async {
     lastProblem = problem;
     lastLocation =
         location.trim().isEmpty ? 'G-13, Islamabad' : location.trim();
@@ -877,6 +917,7 @@ class UstaadState extends ChangeNotifier {
     notifyListeners();
 
     final localFallback = _inferIntent(lastProblem, lastLocation);
+    userOffer = initialOffer ?? localFallback.userBudget;
 
     // Execute Neuroscript-style Failover Engine Ladder
     final ladderResult = await aiRouter.executeIntentLadder(
@@ -889,19 +930,22 @@ class UstaadState extends ChangeNotifier {
     lastLadderAuditLog = ladderResult.ladderAuditLog;
 
     final nextIntent = ladderResult.intent;
-    final ranked = _rankProviders(nextIntent);
+    userOffer ??= nextIntent.userBudget;
+
+    final ranked = _rankProviders(nextIntent, offer: userOffer);
     final firstProvider = ranked.first;
 
     intent = nextIntent;
     rankedProviders = ranked;
     selectedProvider = firstProvider;
-    quote = _quoteFor(firstProvider, nextIntent);
+    quote = _quoteFor(firstProvider, nextIntent, offer: userOffer);
     workflowEvents = _buildWorkflowEvents(
       nextIntent,
       ranked,
       reasoningSteps: ladderResult.reasoningSteps,
       engine: ladderResult.resolvedEngine,
       auditLog: ladderResult.ladderAuditLog,
+      offer: userOffer,
     );
     isAnalyzing = false;
     screen = UstaadScreen.selection;
@@ -911,6 +955,7 @@ class UstaadState extends ChangeNotifier {
   }
 
   void previewProvider(UstaadProviderProfile provider) {
+    userOffer ??= provider.price;
     final nextIntent = ServiceIntent(
       role: provider.role,
       description: '${provider.role} service',
@@ -919,8 +964,9 @@ class UstaadState extends ChangeNotifier {
       timeLabel: provider.nextSlot,
       language: user?.preferredLanguage ?? 'English',
       confidence: 0.88,
+      userBudget: userOffer,
     );
-    final ranked = _rankProviders(nextIntent);
+    final ranked = _rankProviders(nextIntent, offer: userOffer);
     final focused = ranked.firstWhere(
       (item) => item.id == provider.id,
       orElse: () => provider.withScore(82, provider.reason),
@@ -931,15 +977,19 @@ class UstaadState extends ChangeNotifier {
       ...ranked.where((item) => item.id != provider.id),
     ];
     selectedProvider = focused;
-    quote = _quoteFor(focused, nextIntent);
-    workflowEvents = _buildWorkflowEvents(nextIntent, rankedProviders);
+    quote = _quoteFor(focused, nextIntent, offer: userOffer);
+    workflowEvents = _buildWorkflowEvents(
+      nextIntent,
+      rankedProviders,
+      offer: userOffer,
+    );
     screen = UstaadScreen.selection;
     notifyListeners();
   }
 
   Future<void> bookProvider(UstaadProviderProfile provider) async {
     selectedProvider = provider;
-    quote = _quoteFor(provider, intent!);
+    quote = _quoteFor(provider, intent!, offer: userOffer);
     final bookingEvents = _bookingWorkflowEvents(provider);
     workflowEvents = bookingEvents;
     bookingBusy = true;
@@ -966,6 +1016,7 @@ class UstaadState extends ChangeNotifier {
         intent: intent!,
         quote: quote!,
         problemText: lastProblem,
+        offer: userOffer ?? quote!.userOffer ?? intent!.userBudget,
       );
       bookings = [latestBooking!, ...bookings];
       bannerMessage = 'Booking is active locally and will sync when available.';
@@ -1202,6 +1253,22 @@ class UstaadState extends ChangeNotifier {
     final timeLabel = _inferTimeLabel(value);
     final language = _inferLanguage(problem);
 
+    int? extractedBudget;
+    final budgetMatches = RegExp(
+      r'(?:budget|offer|rs\.?|pkr|rupay|rupees|mein)?\s*[:=]?\s*(\d{3,5})\s*(?:rs\.?|pkr|rupay|rupees|mein)?',
+      caseSensitive: false,
+    ).allMatches(problem);
+    for (final m in budgetMatches) {
+      final str = m.group(1);
+      if (str != null) {
+        final val = int.tryParse(str);
+        if (val != null && val >= 200 && val <= 25000) {
+          extractedBudget = val;
+          break;
+        }
+      }
+    }
+
     return ServiceIntent(
       role: role,
       description: description,
@@ -1210,10 +1277,16 @@ class UstaadState extends ChangeNotifier {
       timeLabel: timeLabel,
       language: language,
       confidence: role == 'General' ? 0.72 : 0.93,
+      userBudget: extractedBudget,
     );
   }
 
-  List<UstaadProviderProfile> _rankProviders(ServiceIntent nextIntent) {
+  List<UstaadProviderProfile> _rankProviders(
+    ServiceIntent nextIntent, {
+    int? offer,
+  }) {
+    final targetBudget =
+        offer ?? userOffer ?? nextIntent.userBudget ?? defaultBudgetForRole(nextIntent.role);
     final matching = providers
         .where((provider) =>
             nextIntent.role == 'General' || provider.role == nextIntent.role)
@@ -1221,28 +1294,42 @@ class UstaadState extends ChangeNotifier {
     final pool = matching.isEmpty ? providers : matching;
 
     final scored = pool.map((provider) {
-      final reliability = provider.reliability * 100 * 0.34;
-      final distance = math.max(0, 20 - provider.distanceKm) / 20 * 100 * 0.22;
-      final rating = provider.rating / 5 * 100 * 0.18;
-      final price = math.max(0, 2200 - provider.price) / 2200 * 100 * 0.08;
-      final availability = provider.availabilitySlots
-              .any((slot) => slot.toLowerCase().contains('today'))
-          ? 7
-          : 4;
-      final experience = math.min(provider.jobsCompleted, 250) / 250 * 7;
-      final response = math.max(0, 45 - provider.responseTimeMinutes) / 45 * 6;
+      // InDrive Budget Match Affinity (35% weight)
+      final priceDiff = provider.price - targetBudget;
+      double budgetAffinity;
+      String matchTag;
+      if (priceDiff <= 0) {
+        budgetAffinity = 100.0;
+        final savings = targetBudget - provider.price;
+        matchTag = savings > 0 ? 'Rs. $savings below offer' : 'Exact match';
+      } else if (priceDiff <= 150) {
+        budgetAffinity = 80.0;
+        matchTag = 'Counter: +Rs. $priceDiff';
+      } else if (priceDiff <= 350) {
+        budgetAffinity = 55.0;
+        matchTag = 'Counter: +Rs. $priceDiff';
+      } else {
+        budgetAffinity = math.max(0, 100 - (priceDiff / 10)).toDouble();
+        matchTag = 'Rate: Rs. ${provider.price}';
+      }
+      final budgetScore = budgetAffinity * 0.35;
+
+      final reliability = provider.reliability * 100 * 0.22;
+      final distance = math.max(0, 20 - provider.distanceKm) / 20 * 100 * 0.18;
+      final rating = provider.rating / 5 * 100 * 0.15;
+      final experience = math.min(provider.jobsCompleted, 250) / 250 * 5;
+      final response = math.max(0, 45 - provider.responseTimeMinutes) / 45 * 5;
       final urgencyBoost =
           nextIntent.urgency == 'High' && provider.reliability >= 0.90 ? 5 : 0;
-      final score = reliability +
+      final score = budgetScore +
+          reliability +
           distance +
           rating +
-          price +
-          availability +
           experience +
           response +
           urgencyBoost;
       final reason =
-          '${provider.distanceKm} km away, ${provider.responseTimeMinutes} min response, ${provider.rating} rating, ${provider.jobsCompleted} completed jobs.';
+          '$matchTag · ${provider.distanceKm} km · ${provider.rating}★ (${provider.jobsCompleted} jobs)';
       return provider.withScore(score, reason);
     }).toList()
       ..sort((a, b) => b.score.compareTo(a.score));
@@ -1252,12 +1339,15 @@ class UstaadState extends ChangeNotifier {
 
   QuoteEstimate _quoteFor(
     UstaadProviderProfile provider,
-    ServiceIntent nextIntent,
-  ) {
+    ServiceIntent nextIntent, {
+    int? offer,
+  }) {
+    final targetOffer = offer ?? userOffer ?? nextIntent.userBudget;
     return QuoteEstimate(
       basePrice: provider.price,
       distancePrice: provider.distanceKm * 50,
       urgencyPrice: nextIntent.urgency == 'High' ? 500 : 0,
+      userOffer: targetOffer,
     );
   }
 
@@ -1267,10 +1357,11 @@ class UstaadState extends ChangeNotifier {
     List<String> reasoningSteps = const [],
     AIEngineType engine = AIEngineType.localHeuristic,
     List<String> auditLog = const [],
+    int? offer,
   }) {
     final best = ranked.first;
     final second = ranked.length > 1 ? ranked[1] : best;
-    final estimate = _quoteFor(best, nextIntent);
+    final estimate = _quoteFor(best, nextIntent, offer: offer);
     final tokenCount = nextIntent.description.split(RegExp(r'\s+')).length + 6;
     final sector = _sectorFromLocation(nextIntent.location);
     final nearbyCount =
@@ -1324,10 +1415,10 @@ class UstaadState extends ChangeNotifier {
       ),
       WorkflowEvent(
         agentName: 'Ranking Agent',
-        step: 'Score & Rank',
+        step: 'InDrive Budget Ranking',
         message:
-            'Applied 7-factor ranking: reliability(34%), distance(22%), rating(18%), experience(8%), price(8%), availability(5%), response_time(5%). Top score: ${best.score.toStringAsFixed(1)}/100.',
-        toolName: 'Trust Scoring Engine',
+            'Applied InDrive budget-weighted ranking: budget match(35%), reliability(22%), distance(18%), rating(15%), experience(5%), response(5%). Top score: ${best.score.toStringAsFixed(1)}/100.',
+        toolName: 'Trust & Budget Match Engine',
         status: 'done',
       ),
       WorkflowEvent(
@@ -1340,10 +1431,10 @@ class UstaadState extends ChangeNotifier {
       ),
       WorkflowEvent(
         agentName: 'Quote Agent',
-        step: 'Price Estimate',
+        step: 'Price Estimate & Bidding',
         message:
-            'Base: Rs.${estimate.basePrice} + Distance: Rs.${estimate.distancePrice} + Urgency: Rs.${estimate.urgencyPrice} = Total: Rs.${estimate.total}. Quoted to user.',
-        toolName: 'Dynamic Pricing Engine',
+            'Base: Rs.${estimate.basePrice}${estimate.userOffer != null ? " (Offer: Rs.${estimate.userOffer})" : ""} + Distance: Rs.${estimate.distancePrice} + Urgency: Rs.${estimate.urgencyPrice} = Total: Rs.${estimate.total}.',
+        toolName: 'InDrive Bidding & Pricing Engine',
         status: 'done',
       ),
       WorkflowEvent(

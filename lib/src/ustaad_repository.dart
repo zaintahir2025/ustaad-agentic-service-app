@@ -715,6 +715,7 @@ class UstaadRepository {
       'quote_distance': quote.distancePrice,
       'quote_urgency': quote.urgencyPrice,
       'quote_total': quote.total,
+      'user_offer': quote.userOffer ?? intent.userBudget,
       'status': 'en_route',
       'eta_minutes': etaMinutesFor(provider),
       'slot_label': provider.nextSlot,

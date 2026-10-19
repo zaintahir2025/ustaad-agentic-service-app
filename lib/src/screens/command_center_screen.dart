@@ -19,6 +19,7 @@ class CommandCenterScreen extends StatefulWidget {
 class _CommandCenterScreenState extends State<CommandCenterScreen> {
   final _location = TextEditingController(text: 'G-13, Islamabad');
   final _problem = TextEditingController();
+  final _budget = TextEditingController();
   StreamSubscription<Position>? _locationSubscription;
   bool _locating = false;
   bool _trackingLocation = false;
@@ -33,6 +34,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     _locationSubscription?.cancel();
     _location.dispose();
     _problem.dispose();
+    _budget.dispose();
     super.dispose();
   }
 
@@ -158,21 +160,115 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             runSpacing: 8,
             children: [
               ExampleChip(
-                label: 'AC',
+                label: 'AC (Rs. 1200)',
                 onTap: () {
                   _problem.text =
                       'Mujhe kal subah G-13 mein AC technician chahiye';
+                  _budget.text = '1200';
                 },
               ),
               ExampleChip(
-                label: 'Leak',
-                onTap: () => _problem.text = 'Urgent pani leak in kitchen',
+                label: 'Leak (Rs. 600)',
+                onTap: () {
+                  _problem.text = 'Urgent pani leak in kitchen';
+                  _budget.text = '600';
+                },
               ),
               ExampleChip(
-                label: 'Urdu',
-                onTap: () => _problem.text = 'اے سی ٹھنڈا نہیں ہو رہا',
+                label: 'Urdu (Rs. 1200)',
+                onTap: () {
+                  _problem.text = 'اے سی ٹھنڈا نہیں ہو رہا';
+                  _budget.text = '1200';
+                },
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.local_offer_outlined,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Your Offer / Budget (InDrive Style)',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _budget,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Offer (PKR)',
+                          hintText: 'e.g. 600',
+                          prefixText: 'Rs. ',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: 'Decrease by Rs. 50',
+                      icon: const Icon(Icons.remove, size: 18),
+                      onPressed: () {
+                        final val = int.tryParse(_budget.text) ?? 600;
+                        final newVal = (val - 50).clamp(200, 20000);
+                        setState(() => _budget.text = '$newVal');
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton.filledTonal(
+                      tooltip: 'Increase by Rs. 50',
+                      icon: const Icon(Icons.add, size: 18),
+                      onPressed: () {
+                        final val = int.tryParse(_budget.text) ?? 600;
+                        final newVal = (val + 50).clamp(200, 20000);
+                        setState(() => _budget.text = '$newVal');
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [400, 600, 800, 1000, 1500].map((preset) {
+                    final isSelected = _budget.text == '$preset';
+                    return ChoiceChip(
+                      label: Text('Rs. $preset'),
+                      selected: isSelected,
+                      onSelected: (_) => setState(() => _budget.text = '$preset'),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           ElevatedButton.icon(
@@ -224,6 +320,10 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 label: Text(service.$2),
                 onPressed: () {
                   _problem.text = 'I need a ${service.$3} expert';
+                  final defaultRate = UstaadState.defaultBudgetForRole(service.$3);
+                  if (_budget.text.isEmpty) {
+                    setState(() => _budget.text = '$defaultRate');
+                  }
                 },
               );
             }).toList(),
@@ -349,7 +449,12 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       );
       return;
     }
-    context.read<UstaadState>().startAnalysis(problem, _location.text);
+    final parsedBudget = int.tryParse(_budget.text.trim());
+    context.read<UstaadState>().startAnalysis(
+          problem,
+          _location.text,
+          initialOffer: parsedBudget,
+        );
   }
 
   Future<void> _showLocationSearch() async {

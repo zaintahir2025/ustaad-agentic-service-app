@@ -66,6 +66,8 @@ class _SelectionScreenState extends State<SelectionScreen> {
           const SizedBox(height: 12),
           IntentSummary(intent: intent),
           const SizedBox(height: 12),
+          const InDriveOfferBar(),
+          const SizedBox(height: 12),
           QuotePanel(quote: quote),
           const SizedBox(height: 12),
           if (_showMap)
@@ -95,6 +97,149 @@ class _SelectionScreenState extends State<SelectionScreen> {
           TracePanel(events: state.workflowEvents),
         ],
       ),
+    );
+  }
+}
+
+class InDriveOfferBar extends StatelessWidget {
+  const InDriveOfferBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<UstaadState>();
+    final activeOffer = state.activeOffer;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.local_offer,
+                  size: 20,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your InDrive Offer',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          'Rs. $activeOffer',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'PKR',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit, size: 14),
+                label: const Text('Edit'),
+                onPressed: () => _showEditOfferDialog(context, activeOffer),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(
+                'Raise / Lower Offer:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(),
+              _adjustButton(context, -50, '-50'),
+              const SizedBox(width: 6),
+              _adjustButton(context, 50, '+50'),
+              const SizedBox(width: 6),
+              _adjustButton(context, 100, '+100'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _adjustButton(BuildContext context, int delta, String label) {
+    return ActionChip(
+      label: Text(label),
+      onPressed: () => context.read<UstaadState>().adjustUserOffer(delta),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  void _showEditOfferDialog(BuildContext context, int currentOffer) {
+    final controller = TextEditingController(text: '$currentOffer');
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Set Your Offer'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Offer (PKR)',
+              prefixText: 'Rs. ',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final val = int.tryParse(controller.text);
+                if (val != null && val >= 200) {
+                  context.read<UstaadState>().setUserOffer(val);
+                }
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Update Offer'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

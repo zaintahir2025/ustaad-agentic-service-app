@@ -252,6 +252,7 @@ class BookingRecord {
     this.providerWhatsapp = '',
     this.providerAvatarUrl = '',
     this.providerRating = 0,
+    this.userOffer,
   });
 
   final String id;
@@ -270,6 +271,7 @@ class BookingRecord {
   final String providerWhatsapp;
   final String providerAvatarUrl;
   final double providerRating;
+  final int? userOffer;
 
   String get statusLabel {
     return switch (status) {
@@ -286,6 +288,7 @@ class BookingRecord {
 
   BookingRecord copyWith({
     String? status,
+    int? userOffer,
   }) {
     return BookingRecord(
       id: id,
@@ -304,6 +307,7 @@ class BookingRecord {
       providerWhatsapp: providerWhatsapp,
       providerAvatarUrl: providerAvatarUrl,
       providerRating: providerRating,
+      userOffer: userOffer ?? this.userOffer,
     );
   }
 
@@ -312,6 +316,7 @@ class BookingRecord {
     required ServiceIntent intent,
     required QuoteEstimate quote,
     required String problemText,
+    int? offer,
   }) {
     return BookingRecord(
       id: 'local-${DateTime.now().microsecondsSinceEpoch}',
@@ -331,6 +336,7 @@ class BookingRecord {
       providerWhatsapp: provider.whatsapp,
       providerAvatarUrl: provider.avatarUrl,
       providerRating: provider.rating,
+      userOffer: offer ?? quote.userOffer ?? intent.userBudget,
     );
   }
 
@@ -372,6 +378,9 @@ class BookingRecord {
         providerMap?['rating'],
         fallback: providerFallback?.rating ?? 0,
       ),
+      userOffer: map['user_offer'] == null
+          ? null
+          : _asInt(map['user_offer'], fallback: 0),
     );
   }
 }
@@ -423,6 +432,7 @@ class ServiceIntent {
     required this.timeLabel,
     required this.language,
     required this.confidence,
+    this.userBudget,
   });
 
   final String role;
@@ -432,6 +442,7 @@ class ServiceIntent {
   final String timeLabel;
   final String language;
   final double confidence;
+  final int? userBudget;
 }
 
 class QuoteEstimate {
@@ -439,13 +450,17 @@ class QuoteEstimate {
     required this.basePrice,
     required this.distancePrice,
     required this.urgencyPrice,
+    this.userOffer,
   });
 
   final int basePrice;
   final int distancePrice;
   final int urgencyPrice;
+  final int? userOffer;
 
   int get total => basePrice + distancePrice + urgencyPrice;
+  int get differenceWithOffer => (userOffer != null) ? basePrice - userOffer! : 0;
+  bool get isWithinOffer => userOffer != null && basePrice <= userOffer!;
 }
 
 class WorkflowEvent {

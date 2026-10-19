@@ -269,19 +269,73 @@ class QuotePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Panel(
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: QuoteText(label: 'Base', value: quote.basePrice)),
-          Expanded(
-            child: QuoteText(label: 'Distance', value: quote.distancePrice),
+          Row(
+            children: [
+              if (quote.userOffer != null)
+                Expanded(
+                  child: QuoteText(
+                    label: 'Your Offer',
+                    value: quote.userOffer!,
+                  ),
+                ),
+              Expanded(child: QuoteText(label: 'Base Rate', value: quote.basePrice)),
+              Expanded(
+                child: QuoteText(label: 'Distance', value: quote.distancePrice),
+              ),
+              Expanded(
+                child: QuoteText(
+                  label: 'Total',
+                  value: quote.total,
+                  highlight: true,
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: QuoteText(
-              label: 'Total',
-              value: quote.total,
-              highlight: true,
+          if (quote.userOffer != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: quote.isWithinOffer
+                    ? Colors.green.withValues(alpha: 0.12)
+                    : Colors.amber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    quote.isWithinOffer
+                        ? Icons.check_circle_outline
+                        : Icons.info_outline,
+                    size: 16,
+                    color: quote.isWithinOffer
+                        ? Colors.green
+                        : Colors.amber.shade800,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      quote.isWithinOffer
+                          ? (quote.differenceWithOffer < 0
+                              ? 'Provider base rate is Rs. ${-quote.differenceWithOffer} under your offer!'
+                              : 'Provider base rate matches your offer!')
+                          : 'Provider rate is Rs. ${quote.differenceWithOffer} above your offer.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: quote.isWithinOffer
+                            ? Colors.green.shade700
+                            : Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
