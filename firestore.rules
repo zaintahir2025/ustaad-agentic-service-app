@@ -28,12 +28,11 @@ service cloud.firestore {
 
     // -------------------------------------------------------------
     // User Profiles
+    // Users can ONLY read and write their own profile.
     // -------------------------------------------------------------
     match /profiles/{userId} {
-      // Authenticated users can view basic profiles
-      allow read: if isAuthenticated();
+      allow read: if isOwner(userId);
 
-      // Only the profile owner can create or update their profile
       allow create, update: if isOwner(userId)
         && request.resource.data.id == userId
         && isNonEmptyString(request.resource.data.full_name, 100)
@@ -41,29 +40,46 @@ service cloud.firestore {
         && (!('address' in request.resource.data) || request.resource.data.address.size() <= 300)
         && (!('phone' in request.resource.data) || request.resource.data.phone.size() <= 30);
 
-      // Prevent accidental or malicious profile deletion
       allow delete: if false;
     }
 
     // -------------------------------------------------------------
     // Service Providers (Master Catalog)
+    // Public directory is readable.
+    // Providers can only update their own availability and status, NOT their rating.
     // -------------------------------------------------------------
     match /service_providers/{providerId} {
-      // Public directory is readable by all users
       allow read: if true;
 
-      // Service providers are managed by administrators, never by app users
-      allow write: if false;
+      allow update: if isOwner(providerId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'availability_slots',
+             'next_slot',
+             'status',
+             'is_online',
+             'updated_at',
+             'phone',
+             'whatsapp'
+           ])
+        && request.resource.data.rating == resource.data.rating
+        && request.resource.data.verified == resource.data.verified
+        && request.resource.data.reliability == resource.data.reliability
+        && request.resource.data.id == resource.data.id;
+
+      allow create, delete: if false;
     }
 
     // -------------------------------------------------------------
     // Bookings
+    // Customers can only read and write their own bookings.
+    // Assigned providers can view their bookings and update fulfillment status.
     // -------------------------------------------------------------
     match /bookings/{bookingId} {
-      // Only the customer who owns the booking can read it
-      allow read: if isDocOwner();
+      allow read: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid ||
+        resource.data.provider_id == request.auth.uid
+      );
 
-      // Customers can only create bookings tied directly to their UID
       allow create: if incomingDocOwner()
         && isNonEmptyString(request.resource.data.provider_id, 100)
         && request.resource.data.quote_total is int
@@ -73,16 +89,52 @@ service cloud.firestore {
         && request.resource.data.status in ['scheduled', 'en_route']
         && request.resource.data.created_at != null;
 
-      // Status updates: customers can only cancel or report issues, never tamper with pricing
-      allow update: if isDocOwner()
-        && request.resource.data.user_id == resource.data.user_id
-        && request.resource.data.provider_id == resource.data.provider_id
-        && request.resource.data.quote_total == resource.data.quote_total
-        && request.resource.data.quote_base == resource.data.quote_base
-        && request.resource.data.status in ['scheduled', 'en_route', 'completed', 'cancelled', 'issue_reported'];
+      allow update: if isAuthenticated() && (
+        (isDocOwner()
+          && request.resource.data.user_id == resource.data.user_id
+          && request.resource.data.provider_id == resource.data.provider_id
+          && request.resource.data.quote_total == resource.data.quote_total
+          && request.resource.data.quote_base == resource.data.quote_base
+          && request.resource.data.status in ['scheduled', 'en_route', 'cancelled', 'issue_reported'])
+        ||
+        (resource.data.provider_id == request.auth.uid
+          && request.resource.data.user_id == resource.data.user_id
+          && request.resource.data.provider_id == resource.data.provider_id
+          && request.resource.data.quote_total == resource.data.quote_total
+          && request.resource.data.quote_base == resource.data.quote_base
+          && request.resource.data.status in ['en_route', 'in_progress', 'completed', 'cancelled'])
+      );
 
-      // Deletion blocked to maintain complete audit trail
       allow delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Reviews
+    // Reviews can ONLY be created by the customer associated with a COMPLETED booking.
+    // -------------------------------------------------------------
+    match /reviews/{reviewId} {
+      allow read: if true;
+
+      function hasCompletedBooking(bookingId) {
+        return exists(/databases/$(database)/documents/bookings/$(bookingId))
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.user_id == request.auth.uid
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'completed'
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.provider_id == request.resource.data.provider_id;
+      }
+
+      allow create: if incomingDocOwner()
+        && isNonEmptyString(request.resource.data.provider_id, 100)
+        && isNonEmptyString(request.resource.data.booking_id, 100)
+        && hasCompletedBooking(request.resource.data.booking_id)
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() >= 3
+        && request.resource.data.comment.size() <= 1000
+        && request.resource.data.created_at != null;
+
+      allow update, delete: if false;
     }
 
     // -------------------------------------------------------------
@@ -92,28 +144,6 @@ service cloud.firestore {
       allow read: if isDocOwner();
       allow create: if incomingDocOwner()
         && isNonEmptyString(request.resource.data.booking_id, 100);
-      allow update, delete: if false;
-    }
-
-    // -------------------------------------------------------------
-    // Reviews
-    // -------------------------------------------------------------
-    match /reviews/{reviewId} {
-      // Publicly readable so customers can view provider ratings
-      allow read: if true;
-
-      // Only signed-in users can leave a review with valid ratings & comments
-      allow create: if incomingDocOwner()
-        && isNonEmptyString(request.resource.data.provider_id, 100)
-        && request.resource.data.rating is int
-        && request.resource.data.rating >= 1
-        && request.resource.data.rating <= 5
-        && request.resource.data.comment is string
-        && request.resource.data.comment.size() >= 3
-        && request.resource.data.comment.size() <= 1000
-        && request.resource.data.created_at != null;
-
-      // Reviews cannot be altered or removed once submitted
       allow update, delete: if false;
     }
 
