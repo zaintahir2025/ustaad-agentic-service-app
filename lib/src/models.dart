@@ -2,6 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+export 'domain/entities/service_intent.dart';
+export 'domain/entities/quote_estimate.dart';
+export 'domain/entities/provider_profile.dart';
+export 'domain/entities/workflow_event.dart';
+export 'domain/entities/achievement_badge.dart';
+
+import 'domain/entities/service_intent.dart';
+import 'domain/entities/quote_estimate.dart';
+import 'domain/entities/provider_profile.dart';
+
 enum UstaadScreen {
   gateway,
   commandCenter,
@@ -90,149 +100,7 @@ class AuthSignUpResult {
   final bool emailConfirmationRequired;
 }
 
-class UstaadProviderProfile {
-  const UstaadProviderProfile({
-    required this.id,
-    required this.name,
-    required this.role,
-    required this.reliability,
-    required this.distanceKm,
-    required this.rating,
-    required this.price,
-    required this.avatarUrl,
-    required this.verified,
-    required this.city,
-    this.phone = '+923001234567',
-    this.whatsapp = '+923001234567',
-    this.responseTimeMinutes = 18,
-    this.availabilitySlots = const ['Today 4:00 PM', 'Tomorrow 10:00 AM'],
-    this.jobsCompleted = 120,
-    this.score = 0,
-    this.reason = '',
-    this.latitude,
-    this.longitude,
-  });
 
-  final String id;
-  final String name;
-  final String role;
-  final double reliability;
-  final int distanceKm;
-  final double rating;
-  final int price;
-  final String avatarUrl;
-  final bool verified;
-  final String city;
-  final String phone;
-  final String whatsapp;
-  final int responseTimeMinutes;
-  final List<String> availabilitySlots;
-  final int jobsCompleted;
-  final double score;
-  final String reason;
-  final double? latitude;
-  final double? longitude;
-
-  String get nextSlot =>
-      availabilitySlots.isEmpty ? 'Tomorrow 10:00 AM' : availabilitySlots.first;
-
-  UstaadProviderProfile withScore(double value, String rankingReason) {
-    return UstaadProviderProfile(
-      id: id,
-      name: name,
-      role: role,
-      reliability: reliability,
-      distanceKm: distanceKm,
-      rating: rating,
-      price: price,
-      avatarUrl: avatarUrl,
-      verified: verified,
-      city: city,
-      phone: phone,
-      whatsapp: whatsapp,
-      responseTimeMinutes: responseTimeMinutes,
-      availabilitySlots: availabilitySlots,
-      jobsCompleted: jobsCompleted,
-      score: value,
-      reason: rankingReason,
-      latitude: latitude,
-      longitude: longitude,
-    );
-  }
-
-  UstaadProviderProfile withDistanceKm(int value) {
-    return UstaadProviderProfile(
-      id: id,
-      name: name,
-      role: role,
-      reliability: reliability,
-      distanceKm: value,
-      rating: rating,
-      price: price,
-      avatarUrl: avatarUrl,
-      verified: verified,
-      city: city,
-      phone: phone,
-      whatsapp: whatsapp,
-      responseTimeMinutes: responseTimeMinutes,
-      availabilitySlots: availabilitySlots,
-      jobsCompleted: jobsCompleted,
-      score: score,
-      reason: reason,
-      latitude: latitude,
-      longitude: longitude,
-    );
-  }
-
-  factory UstaadProviderProfile.fromMap(Map<String, dynamic> map) {
-    return UstaadProviderProfile(
-      id: '${map['id']}',
-      name: '${map['name'] ?? 'Provider'}',
-      role: '${map['role'] ?? 'General'}',
-      reliability: _asDouble(map['reliability'], fallback: 0.85),
-      distanceKm: _asInt(map['distance_km'], fallback: 5),
-      rating: _asDouble(map['rating'], fallback: 4.5),
-      price: _asInt(map['price'], fallback: 800),
-      avatarUrl: '${map['avatar_url'] ?? ''}',
-      verified: map['verified'] == true,
-      city: '${map['city'] ?? 'Islamabad'}',
-      phone: '${map['phone'] ?? '+923001234567'}',
-      whatsapp: '${map['whatsapp'] ?? '+923001234567'}',
-      responseTimeMinutes: _asInt(map['response_time_minutes'], fallback: 18),
-      availabilitySlots: _asStringList(map['availability_slots']),
-      jobsCompleted: _asInt(map['jobs_completed'], fallback: 120),
-      latitude: map['latitude'] == null
-          ? null
-          : _asDouble(map['latitude'], fallback: 33.6938),
-      longitude: map['longitude'] == null
-          ? null
-          : _asDouble(map['longitude'], fallback: 73.0652),
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'name': name,
-      'role': role,
-      'reliability': reliability,
-      'distance_km': distanceKm,
-      'rating': rating,
-      'price': price,
-      'avatar_url': avatarUrl,
-      'verified': verified,
-      'city': city,
-      'phone': phone,
-      'whatsapp': whatsapp,
-      'response_time_minutes': responseTimeMinutes,
-      'availability_slots': availabilitySlots,
-      'jobs_completed': jobsCompleted,
-      'latitude': latitude,
-      'longitude': longitude,
-      'active': true,
-    };
-  }
-}
 
 class BookingRecord {
   const BookingRecord({
@@ -423,61 +291,7 @@ class ReviewRecord {
   }
 }
 
-class ServiceIntent {
-  const ServiceIntent({
-    required this.role,
-    required this.description,
-    required this.urgency,
-    required this.location,
-    required this.timeLabel,
-    required this.language,
-    required this.confidence,
-    this.userBudget,
-  });
 
-  final String role;
-  final String description;
-  final String urgency;
-  final String location;
-  final String timeLabel;
-  final String language;
-  final double confidence;
-  final int? userBudget;
-}
-
-class QuoteEstimate {
-  const QuoteEstimate({
-    required this.basePrice,
-    required this.distancePrice,
-    required this.urgencyPrice,
-    this.userOffer,
-  });
-
-  final int basePrice;
-  final int distancePrice;
-  final int urgencyPrice;
-  final int? userOffer;
-
-  int get total => basePrice + distancePrice + urgencyPrice;
-  int get differenceWithOffer => (userOffer != null) ? basePrice - userOffer! : 0;
-  bool get isWithinOffer => userOffer != null && basePrice <= userOffer!;
-}
-
-class WorkflowEvent {
-  const WorkflowEvent({
-    required this.agentName,
-    required this.step,
-    required this.message,
-    required this.toolName,
-    required this.status,
-  });
-
-  final String agentName;
-  final String step;
-  final String message;
-  final String toolName;
-  final String status;
-}
 
 class AIChatMessage {
   const AIChatMessage({
@@ -528,72 +342,7 @@ class EmergencyRequest {
   }
 }
 
-class AchievementBadge {
-  const AchievementBadge({
-    required this.id,
-    required this.title,
-    required this.emoji,
-    required this.description,
-    this.unlocked = false,
-    this.unlockedAt,
-  });
 
-  final String id;
-  final String title;
-  final String emoji;
-  final String description;
-  final bool unlocked;
-  final DateTime? unlockedAt;
-
-  AchievementBadge copyWith({
-    bool? unlocked,
-    DateTime? unlockedAt,
-  }) {
-    return AchievementBadge(
-      id: id,
-      title: title,
-      emoji: emoji,
-      description: description,
-      unlocked: unlocked ?? this.unlocked,
-      unlockedAt: unlockedAt ?? this.unlockedAt,
-    );
-  }
-
-  static List<AchievementBadge> defaultBadges() {
-    return const [
-      AchievementBadge(
-        id: 'first_request',
-        title: 'First Request',
-        emoji: '🚀',
-        description: 'Made your first service request',
-      ),
-      AchievementBadge(
-        id: 'first_booking',
-        title: 'First Booking',
-        emoji: '🏆',
-        description: 'Successfully booked your first Ustaad',
-      ),
-      AchievementBadge(
-        id: 'multilingual',
-        title: 'Language Master',
-        emoji: '🌐',
-        description: 'Used Urdu or Roman Urdu input',
-      ),
-      AchievementBadge(
-        id: 'emergency_hero',
-        title: 'Emergency Hero',
-        emoji: '⚡',
-        description: 'Used Emergency Fast-Track mode',
-      ),
-      AchievementBadge(
-        id: 'power_user',
-        title: 'Power User',
-        emoji: '💎',
-        description: 'Made 3 or more bookings',
-      ),
-    ];
-  }
-}
 
 class SmartSuggestion {
   const SmartSuggestion({
@@ -767,16 +516,6 @@ double _asDouble(Object? value, {required double fallback}) {
   if (value is double) return value;
   if (value is num) return value.toDouble();
   return double.tryParse('$value') ?? fallback;
-}
-
-List<String> _asStringList(Object? value) {
-  if (value is List) {
-    return value
-        .map((item) => '$item')
-        .where((item) => item.isNotEmpty)
-        .toList();
-  }
-  return const ['Today 4:00 PM', 'Tomorrow 10:00 AM'];
 }
 
 DateTime? _asDateTime(Object? value) {
