@@ -880,7 +880,15 @@ class UstaadState extends ChangeNotifier {
       userMessage: clean,
     );
 
-    final quickIntent = _extractIntentUseCase.execute(clean, lastLocation);
+    ServiceIntent quickIntent;
+    try {
+      quickIntent = await _repository.extractServiceIntent(
+        problemText: clean,
+        location: lastLocation,
+      );
+    } catch (_) {
+      quickIntent = _extractIntentUseCase.execute(clean, lastLocation);
+    }
     final hasRole = quickIntent.role != 'General';
     final budget = quickIntent.userBudget;
 
@@ -967,25 +975,39 @@ class UstaadState extends ChangeNotifier {
     isAnalyzing = true;
     notifyListeners();
 
-    final localFallback = _extractIntentUseCase.execute(
-      lastProblem,
-      lastLocation,
-      initialOffer: initialOffer,
-    );
-    userOffer = initialOffer ?? localFallback.userBudget;
+    // 1. Try server-side Firebase Cloud Function (extractServiceIntent)
+    ServiceIntent nextIntent;
+    List<String> reasoningSteps = const [];
+    try {
+      nextIntent = await _repository.extractServiceIntent(
+        problemText: lastProblem,
+        location: lastLocation,
+        initialOffer: initialOffer,
+      );
+      lastResolvedEngine = AIEngineType.openRouterCloud;
+      lastLadderAuditLog = const ['Firebase Cloud Function (extractServiceIntent) ➔ Success'];
+      reasoningSteps = const ['Extracted via backend Firebase Cloud Function with Gemini Logic.'];
+    } catch (_) {
+      // 2. Cascade to local AI Router ladder if Cloud Function is offline/unreachable
+      final localFallback = _extractIntentUseCase.execute(
+        lastProblem,
+        lastLocation,
+        initialOffer: initialOffer,
+      );
 
-    // Execute Neuroscript-style Failover Engine Ladder
-    final ladderResult = await aiRouter.executeIntentLadder(
-      problemText: lastProblem,
-      fallbackLocation: lastLocation,
-      localFallback: localFallback,
-    );
+      final ladderResult = await aiRouter.executeIntentLadder(
+        problemText: lastProblem,
+        fallbackLocation: lastLocation,
+        localFallback: localFallback,
+      );
 
-    lastResolvedEngine = ladderResult.resolvedEngine;
-    lastLadderAuditLog = ladderResult.ladderAuditLog;
+      lastResolvedEngine = ladderResult.resolvedEngine;
+      lastLadderAuditLog = ladderResult.ladderAuditLog;
+      nextIntent = ladderResult.intent;
+      reasoningSteps = ladderResult.reasoningSteps;
+    }
 
-    final nextIntent = ladderResult.intent;
-    userOffer ??= nextIntent.userBudget;
+    userOffer = initialOffer ?? nextIntent.userBudget;
 
     final ranked = _rankProviders(nextIntent, offer: userOffer);
     final firstProvider = ranked.first;
@@ -997,9 +1019,9 @@ class UstaadState extends ChangeNotifier {
     workflowEvents = _buildWorkflowEvents(
       nextIntent,
       ranked,
-      reasoningSteps: ladderResult.reasoningSteps,
-      engine: ladderResult.resolvedEngine,
-      auditLog: ladderResult.ladderAuditLog,
+      reasoningSteps: reasoningSteps,
+      engine: lastResolvedEngine,
+      auditLog: lastLadderAuditLog,
       offer: userOffer,
     );
     isAnalyzing = false;

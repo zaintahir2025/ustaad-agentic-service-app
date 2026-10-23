@@ -40,6 +40,11 @@ ios/Flutter/flutter_export_environment.sh
 ios/Pods/
 .symlinks/
 
+# Node / Firebase Functions
+node_modules/
+functions/node_modules/
+functions/firebase-debug*.log
+
 # OS Generated
 .DS_Store
 Thumbs.db

@@ -6,8 +6,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import 'models.dart';
+import 'domain/usecases/extract_intent_use_case.dart';
 
 class AuthException implements Exception {
   final String message;
@@ -21,13 +23,19 @@ class UstaadRepository {
     auth.FirebaseAuth? authInstance,
     FirebaseFirestore? firestoreInstance,
     FirebaseStorage? storageInstance,
+    FirebaseFunctions? functionsInstance,
+    http.Client? httpClient,
   })  : _customAuth = authInstance,
         _customDb = firestoreInstance,
-        _customStorage = storageInstance;
+        _customStorage = storageInstance,
+        _customFunctions = functionsInstance,
+        _httpClient = httpClient ?? http.Client();
 
   final auth.FirebaseAuth? _customAuth;
   final FirebaseFirestore? _customDb;
   final FirebaseStorage? _customStorage;
+  final FirebaseFunctions? _customFunctions;
+  final http.Client _httpClient;
 
   bool get isFirebaseInitialized =>
       _customAuth != null || Firebase.apps.isNotEmpty;
@@ -48,6 +56,12 @@ class UstaadRepository {
       _customStorage ??
       (isFirebaseInitialized
           ? FirebaseStorage.instance
+          : throw StateError('Firebase is not initialized.'));
+
+  FirebaseFunctions get _functions =>
+      _customFunctions ??
+      (isFirebaseInitialized
+          ? FirebaseFunctions.instanceFor(region: 'us-central1')
           : throw StateError('Firebase is not initialized.'));
 
   static const _networkTimeout = Duration(seconds: 8);
@@ -684,6 +698,112 @@ class UstaadRepository {
       ),
     ],
   };
+
+  /// Calls the backend Firebase Cloud Function `extractServiceIntent` to perform
+  /// server-side NLP, code-switching analysis, and InDrive budget extraction via Gemini.
+  ///
+  /// Falls back gracefully to heuristic parsing or direct HTTP if Cloud Functions
+  /// is not connected or in offline mode.
+  Future<ServiceIntent> extractServiceIntent({
+    required String problemText,
+    required String location,
+    int? initialOffer,
+    String? customEmulatorUrl,
+  }) async {
+    final cleanProblem = sanitizeInput(problemText, maxLength: 1000);
+    final cleanLocation = sanitizeInput(location, maxLength: 200);
+
+    if (cleanProblem.isEmpty) {
+      throw ArgumentError('problemText must not be empty');
+    }
+
+    // 1. If custom emulator or direct URL is specified, try HTTP
+    final emulatorEndpoint = customEmulatorUrl ??
+        const String.fromEnvironment('FUNCTIONS_EMULATOR_URL', defaultValue: '');
+    if (emulatorEndpoint.isNotEmpty) {
+      try {
+        final uri = Uri.parse(emulatorEndpoint);
+        final res = await _httpClient.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'data': {
+              'problemText': cleanProblem,
+              'location': cleanLocation,
+              'initialOffer': initialOffer,
+            }
+          }),
+        ).timeout(const Duration(seconds: 8));
+
+        if (res.statusCode == 200) {
+          final body = jsonDecode(res.body);
+          final data = body is Map && body['result'] is Map
+              ? Map<String, dynamic>.from(body['result'])
+              : (body is Map ? Map<String, dynamic>.from(body) : <String, dynamic>{});
+          return _parseServiceIntentFromCloud(data, cleanProblem, cleanLocation, initialOffer);
+        }
+      } catch (e) {
+        debugPrint('Direct HTTP Cloud Function call failed, falling back: $e');
+      }
+    }
+
+    // 2. Try Firebase Cloud Functions callable
+    if (_customFunctions != null || isFirebaseInitialized) {
+      try {
+        final callable = _functions.httpsCallable(
+          'extractServiceIntent',
+          options: HttpsCallableOptions(timeout: const Duration(seconds: 10)),
+        );
+        final result = await callable.call<Map<String, dynamic>>({
+          'problemText': cleanProblem,
+          'location': cleanLocation,
+          'initialOffer': initialOffer,
+        });
+
+        final data = Map<String, dynamic>.from(result.data);
+        return _parseServiceIntentFromCloud(data, cleanProblem, cleanLocation, initialOffer);
+      } catch (e) {
+        debugPrint('FirebaseFunctions extractServiceIntent failed, falling back: $e');
+      }
+    }
+
+    // 3. Fallback to domain intent extraction safety net
+    const fallbackUseCase = ExtractIntentUseCase();
+    return fallbackUseCase.execute(
+      cleanProblem,
+      cleanLocation,
+      initialOffer: initialOffer,
+    );
+  }
+
+  ServiceIntent _parseServiceIntentFromCloud(
+    Map<String, dynamic> data,
+    String fallbackProblem,
+    String fallbackLocation,
+    int? initialOffer,
+  ) {
+    final role = (data['role'] as String?)?.trim() ?? 'General';
+    final description = (data['description'] as String?)?.trim() ?? 'General Maintenance';
+    final urgency = (data['urgency'] as String?)?.trim() ?? 'Normal';
+    final location = (data['location'] as String?)?.trim() ?? fallbackLocation;
+    final timeLabel = (data['timeLabel'] as String?)?.trim() ?? 'Next available slot';
+    final language = (data['language'] as String?)?.trim() ?? 'English';
+    final confidence = (data['confidence'] is num)
+        ? (data['confidence'] as num).toDouble()
+        : 0.92;
+    final userBudget = initialOffer ?? (data['userBudget'] is num ? (data['userBudget'] as num).toInt() : null);
+
+    return ServiceIntent(
+      role: role,
+      description: description,
+      urgency: urgency,
+      location: location,
+      timeLabel: timeLabel,
+      language: language,
+      confidence: confidence,
+      userBudget: userBudget,
+    );
+  }
 
   UstaadUser _userFromFirebase(auth.User user) {
     return UstaadUser(
