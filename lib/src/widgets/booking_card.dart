@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../currency.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../ustaad_state.dart';
@@ -31,7 +32,7 @@ class BookingCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                    Text('${booking.serviceRole} - Rs. ${booking.quoteTotal}'),
+                    Text('${booking.serviceRole} • ${formatPkr(booking.quoteTotal)}'),
                   ],
                 ),
               ),

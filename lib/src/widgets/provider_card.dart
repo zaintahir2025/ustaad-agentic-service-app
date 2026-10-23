@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../currency.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../ustaad_state.dart';
@@ -72,16 +73,16 @@ class _ProviderCardState extends State<ProviderCard> {
                   visualDensity: VisualDensity.compact,
                 ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: isBelowOrEqual
-                      ? Colors.green.withValues(alpha: 0.12)
-                      : Colors.orange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
+                      ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                      : const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: isBelowOrEqual
-                        ? Colors.green.withValues(alpha: 0.3)
-                        : Colors.orange.withValues(alpha: 0.3),
+                        ? const Color(0xFF10B981).withValues(alpha: 0.35)
+                        : const Color(0xFFF59E0B).withValues(alpha: 0.35),
                   ),
                 ),
                 child: Row(
@@ -91,22 +92,26 @@ class _ProviderCardState extends State<ProviderCard> {
                       isBelowOrEqual ? Icons.check_circle : Icons.swap_horiz,
                       size: 14,
                       color: isBelowOrEqual
-                          ? Colors.green.shade700
-                          : Colors.orange.shade800,
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFF59E0B),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 5),
                     Text(
                       isBelowOrEqual
                           ? (priceDiff < 0
-                              ? 'Offer matched (-Rs. ${-priceDiff})'
+                              ? 'Offer matched (-${formatPkr(-priceDiff)})'
                               : 'Exact offer match')
-                          : 'Counter: +Rs. $priceDiff',
+                          : 'Counter: +${formatPkr(priceDiff)}',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: isBelowOrEqual
-                            ? Colors.green.shade800
-                            : Colors.orange.shade900,
+                            ? (Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF6EE7B7)
+                                : const Color(0xFF065F46))
+                            : (Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFFFCD34D)
+                                : const Color(0xFF92400E)),
                       ),
                     ),
                   ],
@@ -114,10 +119,31 @@ class _ProviderCardState extends State<ProviderCard> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: [
-              Avatar(url: provider.avatarUrl, size: 54),
+              Stack(
+                children: [
+                  Avatar(url: provider.avatarUrl, size: 56),
+                  if (provider.verified)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.check,
+                          size: 11,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -126,11 +152,47 @@ class _ProviderCardState extends State<ProviderCard> {
                     Text(
                       provider.name,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w900),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Text('${provider.role} • ${provider.distanceKm} km'),
-                    Text('${provider.rating} ★ • Rs. ${provider.price}'),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${provider.role} • ${provider.distanceKm} km',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.star,
+                          size: 13,
+                          color: Color(0xFFF59E0B),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${provider.rating}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            color: Color(0xFFF59E0B),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          formatPkr(provider.price),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -139,7 +201,10 @@ class _ProviderCardState extends State<ProviderCard> {
                 onPressed: () => context
                     .read<UstaadState>()
                     .toggleSavedProvider(provider.id),
-                icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
+                icon: Icon(
+                  saved ? Icons.bookmark : Icons.bookmark_border,
+                  color: saved ? Theme.of(context).colorScheme.primary : null,
+                ),
               ),
             ],
           ),
@@ -175,13 +240,21 @@ class _ProviderCardState extends State<ProviderCard> {
           ReviewsPreview(providerId: provider.id, reviews: reviews),
           const SizedBox(height: 12),
           ElevatedButton.icon(
-            onPressed: () =>
-                context.read<UstaadState>().bookProvider(provider),
-            icon: const Icon(Icons.handshake),
+            onPressed: state.bookingBusy
+                ? null
+                : () => context.read<UstaadState>().bookProvider(provider),
+            icon: state.bookingBusy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.handshake),
             label: Text(
-              isBelowOrEqual
-                  ? 'Accept Offer (Rs. ${provider.price})'
-                  : 'Accept Counter (Rs. ${provider.price})',
+              state.bookingBusy
+                  ? 'Confirming booking...'
+                  : (isBelowOrEqual
+                      ? 'Accept Offer (${formatPkr(provider.price)})'
+                      : 'Accept Counter (${formatPkr(provider.price)})'),
             ),
           ),
         ],

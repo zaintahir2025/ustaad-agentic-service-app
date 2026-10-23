@@ -134,7 +134,7 @@ void main() {
       final aiReply = state.chatMessages.last;
       expect(aiReply.suggestedRole, equals('Plumber'));
       expect(aiReply.suggestedBudget, equals(100));
-      expect(aiReply.suggestedAction, equals('Find Plumbers (Offer: Rs. 100)'));
+      expect(aiReply.suggestedAction, equals('Find Plumbers (Offer: PKR 100)'));
       expect(aiReply.text.toLowerCase().contains('plumber') || aiReply.text.toLowerCase().contains('sink'), isTrue);
       expect(aiReply.text.contains('100'), isTrue);
 

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 
 import 'models.dart';
+import 'currency.dart';
 import 'ustaad_repository.dart';
 import 'gemini_service.dart';
 import 'ai_engine_router.dart';
@@ -744,7 +745,10 @@ class UstaadState extends ChangeNotifier {
     }
 
     try {
-      bookings = await _repository.fetchBookings();
+      final remote = await _repository.fetchBookings();
+      if (remote.isNotEmpty || _repository.isFirebaseInitialized) {
+        bookings = remote;
+      }
       backendOnline = true;
     } catch (_) {
       backendOnline = false;
@@ -859,7 +863,7 @@ class UstaadState extends ChangeNotifier {
 
     final actionLabel = hasRole
         ? (budget != null
-            ? 'Find ${quickIntent.role}s (Offer: Rs. $budget)'
+            ? 'Find ${quickIntent.role}s (Offer: ${formatPkr(budget)})'
             : 'Find ${quickIntent.role}s')
         : null;
 
@@ -1456,16 +1460,16 @@ class UstaadState extends ChangeNotifier {
       if (priceDiff <= 0) {
         budgetAffinity = 100.0;
         final savings = targetBudget - provider.price;
-        matchTag = savings > 0 ? 'Rs. $savings below offer' : 'Exact match';
+        matchTag = savings > 0 ? '${formatPkr(savings)} below offer' : 'Exact match';
       } else if (priceDiff <= 150) {
         budgetAffinity = 80.0;
-        matchTag = 'Counter: +Rs. $priceDiff';
+        matchTag = 'Counter: +${formatPkr(priceDiff)}';
       } else if (priceDiff <= 350) {
         budgetAffinity = 55.0;
-        matchTag = 'Counter: +Rs. $priceDiff';
+        matchTag = 'Counter: +${formatPkr(priceDiff)}';
       } else {
         budgetAffinity = math.max(0, 100 - (priceDiff / 10)).toDouble();
-        matchTag = 'Rate: Rs. ${provider.price}';
+        matchTag = 'Rate: ${formatPkr(provider.price)}';
       }
       final budgetScore = budgetAffinity * 0.35;
 
@@ -1588,7 +1592,7 @@ class UstaadState extends ChangeNotifier {
         agentName: 'Quote Agent',
         step: 'Price Estimate & Bidding',
         message:
-            'Base: Rs.${estimate.basePrice}${estimate.userOffer != null ? " (Offer: Rs.${estimate.userOffer})" : ""} + Distance: Rs.${estimate.distancePrice} + Urgency: Rs.${estimate.urgencyPrice} = Total: Rs.${estimate.total}.',
+            'Base: ${formatPkr(estimate.basePrice)}${estimate.userOffer != null ? " (Offer: ${formatPkr(estimate.userOffer!)})" : ""} + Distance: ${formatPkr(estimate.distancePrice)} + Urgency: ${formatPkr(estimate.urgencyPrice)} = Total: ${formatPkr(estimate.total)}.',
         toolName: 'InDrive Bidding & Pricing Engine',
         status: 'done',
       ),

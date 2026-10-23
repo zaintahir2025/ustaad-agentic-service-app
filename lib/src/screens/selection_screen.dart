@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../currency.dart';
 import '../ustaad_state.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/osm_map_panel.dart';
@@ -141,26 +142,13 @@ class InDriveOfferBar extends StatelessWidget {
                         color: colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    Row(
-                      children: [
-                        Text(
-                          'Rs. $activeOffer',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'PKR',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      formatPkr(activeOffer),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: colorScheme.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -199,10 +187,19 @@ class InDriveOfferBar extends StatelessWidget {
   }
 
   Widget _adjustButton(BuildContext context, int delta, String label) {
-    return ActionChip(
-      label: Text(label),
+    return FilledButton.tonal(
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        minimumSize: const Size(0, 32),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
       onPressed: () => context.read<UstaadState>().adjustUserOffer(delta),
-      visualDensity: VisualDensity.compact,
+      child: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+      ),
     );
   }
 
@@ -219,7 +216,7 @@ class InDriveOfferBar extends StatelessWidget {
             autofocus: true,
             decoration: const InputDecoration(
               labelText: 'Offer (PKR)',
-              prefixText: 'Rs. ',
+              prefixText: 'PKR ',
             ),
           ),
           actions: [

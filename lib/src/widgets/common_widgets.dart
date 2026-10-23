@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../currency.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../ustaad_state.dart';
@@ -244,16 +245,18 @@ class Panel extends StatelessWidget {
       },
       child: Material(
         color: Theme.of(context).cardColor,
-        elevation: 2,
-        shadowColor: Colors.black.withValues(alpha: 0.08),
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.12),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: Theme.of(context).dividerColor),
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.7),
+          ),
         ),
         child: Padding(
           padding:
-              EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 14 : 18),
+              EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 16 : 20),
           child: child,
         ),
       ),
@@ -320,9 +323,9 @@ class QuotePanel extends StatelessWidget {
                     child: Text(
                       quote.isWithinOffer
                           ? (quote.differenceWithOffer < 0
-                              ? 'Provider base rate is Rs. ${-quote.differenceWithOffer} under your offer!'
+                              ? 'Provider base rate is ${formatPkr(-quote.differenceWithOffer)} under your offer!'
                               : 'Provider base rate matches your offer!')
-                          : 'Provider rate is Rs. ${quote.differenceWithOffer} above your offer.',
+                          : 'Provider rate is ${formatPkr(quote.differenceWithOffer)} above your offer.',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -362,7 +365,7 @@ class QuoteText extends StatelessWidget {
         Text(label),
         const SizedBox(height: 4),
         Text(
-          'Rs. $value',
+          formatPkr(value),
           style: TextStyle(
             color: highlight ? Theme.of(context).colorScheme.primary : null,
             fontWeight: FontWeight.w900,
@@ -479,8 +482,11 @@ class MetricChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -622,8 +628,11 @@ class StatusTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -778,8 +787,11 @@ class InlineEmpty extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
+        ),
       ),
       child: Row(
         children: [

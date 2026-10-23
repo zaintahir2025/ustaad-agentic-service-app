@@ -127,7 +127,7 @@ class AuthThemeButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: () => context.read<UstaadState>().toggleTheme(),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             width: 44,
@@ -136,7 +136,7 @@ class AuthThemeButton extends StatelessWidget {
               color: state.isDark
                   ? colors.fieldFill
                   : colors.panel.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: state.isDark
                     ? colors.accent.withValues(alpha: 0.36)
@@ -466,7 +466,7 @@ class EmailConfirmationNotice extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colors.accent.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: colors.accent.withValues(alpha: 0.26)),
       ),
       child: Column(

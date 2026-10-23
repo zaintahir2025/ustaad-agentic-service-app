@@ -192,9 +192,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 18),
                 ElevatedButton.icon(
                   onPressed: state.profileBusy ? null : _save,
-                  icon: const Icon(Icons.save),
+                  icon: state.profileBusy
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save),
                   label: Text(
-                    AppLocalizations.of(context)?.saveProfile ?? 'Save profile',
+                    state.profileBusy
+                        ? 'Saving profile...'
+                        : (AppLocalizations.of(context)?.saveProfile ??
+                            'Save profile'),
                   ),
                 ),
                 if (state.bannerMessage != null) ...[
@@ -235,13 +243,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _save() async {
-    if (_name.text.trim().isEmpty) {
+    final name = _name.text.trim();
+    if (name.isEmpty) {
       _show('Enter your name.');
       return;
     }
+    final phone = _phone.text.trim();
+    if (phone.isNotEmpty && phone.replaceAll(RegExp(r'[^0-9]'), '').length < 10) {
+      _show('Please enter a valid phone number (at least 10 digits).');
+      return;
+    }
     final ok = await context.read<UstaadState>().saveProfile(
-          name: _name.text.trim(),
-          phone: _phone.text.trim(),
+          name: name,
+          phone: phone,
           city: _city.text.trim().isEmpty ? 'Islamabad' : _city.text.trim(),
           address: _address.text.trim(),
           preferredLanguage: _language,
@@ -274,11 +288,13 @@ class SecurityPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

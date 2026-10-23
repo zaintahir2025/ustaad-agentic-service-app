@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 
+import '../currency.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../ustaad_state.dart';
@@ -77,13 +78,13 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 5, child: _requestPanel()),
+                Expanded(flex: 5, child: _requestPanel(state)),
                 const SizedBox(width: 16),
                 Expanded(flex: 4, child: _quickServices()),
               ],
             )
           else ...[
-            _requestPanel(),
+            _requestPanel(state),
             const SizedBox(height: 12),
             _quickServices(),
           ],
@@ -94,7 +95,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
   }
 
-  Widget _requestPanel() {
+  Widget _requestPanel(UstaadState state) {
     final l10n = AppLocalizations.of(context);
     return Panel(
       child: Column(
@@ -115,6 +116,62 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     : const Icon(Icons.travel_explore),
                 onPressed: _locating ? null : _showLocationSearch,
               ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(
+                    'Quick:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                for (final sector in [
+                  'G-13',
+                  'F-10',
+                  'E-11',
+                  'Bahria Town',
+                  'DHA-2',
+                  'I-8',
+                  'F-7'
+                ]) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: const Icon(Icons.near_me_outlined, size: 13),
+                      label: Text(sector, style: const TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        final fullName = sector == 'Bahria Town'
+                            ? 'Bahria Town, Rawalpindi'
+                            : (sector == 'DHA-2'
+                                ? 'DHA Phase 2, Islamabad'
+                                : '$sector, Islamabad');
+                        setState(() {
+                          _location.text = fullName;
+                          _locationStatus = 'Selected $fullName';
+                        });
+                        context.read<UstaadState>().setActiveLocation(
+                              LocationSuggestion(
+                                label: fullName,
+                                subtitle: 'Islamabad / Rawalpindi',
+                                latitude: 33.6844,
+                                longitude: 73.0479,
+                              ),
+                            );
+                      },
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           if (_locationStatus != null) ...[
@@ -160,7 +217,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             runSpacing: 8,
             children: [
               ExampleChip(
-                label: 'AC (Rs. 1200)',
+                label: 'AC (${formatPkr(1200)})',
                 onTap: () {
                   _problem.text =
                       'Mujhe kal subah G-13 mein AC technician chahiye';
@@ -168,14 +225,14 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 },
               ),
               ExampleChip(
-                label: 'Leak (Rs. 600)',
+                label: 'Leak (${formatPkr(600)})',
                 onTap: () {
                   _problem.text = 'Urgent pani leak in kitchen';
                   _budget.text = '600';
                 },
               ),
               ExampleChip(
-                label: 'Urdu (Rs. 1200)',
+                label: 'Urdu (${formatPkr(1200)})',
                 onTap: () {
                   _problem.text = 'اے سی ٹھنڈا نہیں ہو رہا';
                   _budget.text = '1200';
@@ -227,14 +284,14 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Offer (PKR)',
                           hintText: 'e.g. 600',
-                          prefixText: 'Rs. ',
+                          prefixText: 'PKR ',
                           isDense: true,
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     IconButton.filledTonal(
-                      tooltip: 'Decrease by Rs. 50',
+                      tooltip: 'Decrease by ${formatPkr(50)}',
                       icon: const Icon(Icons.remove, size: 18),
                       onPressed: () {
                         final val = int.tryParse(_budget.text) ?? 600;
@@ -244,7 +301,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                     ),
                     const SizedBox(width: 4),
                     IconButton.filledTonal(
-                      tooltip: 'Increase by Rs. 50',
+                      tooltip: 'Increase by ${formatPkr(50)}',
                       icon: const Icon(Icons.add, size: 18),
                       onPressed: () {
                         final val = int.tryParse(_budget.text) ?? 600;
@@ -261,7 +318,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                   children: [400, 600, 800, 1000, 1500].map((preset) {
                     final isSelected = _budget.text == '$preset';
                     return ChoiceChip(
-                      label: Text('Rs. $preset'),
+                      label: Text(formatPkr(preset)),
                       selected: isSelected,
                       onSelected: (_) => setState(() => _budget.text = '$preset'),
                     );
@@ -272,9 +329,16 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
           ),
           const SizedBox(height: 14),
           ElevatedButton.icon(
-            onPressed: _analyze,
-            icon: const Icon(Icons.search),
-            label: Text(l10n?.findProviders ?? 'Find providers'),
+            onPressed: state.isAnalyzing ? null : _analyze,
+            icon: state.isAnalyzing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.search),
+            label: Text(state.isAnalyzing
+                ? 'Finding providers...'
+                : (l10n?.findProviders ?? 'Find providers')),
           ),
         ],
       ),
@@ -283,20 +347,49 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
 
   Widget _quickServices() {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
     final services = [
-      (Icons.ac_unit, l10n?.acRepair ?? 'AC Repair', 'AC Repair'),
-      (Icons.water_drop, l10n?.plumber ?? 'Plumber', 'Plumber'),
       (
-        Icons.electrical_services,
-        l10n?.electrician ?? 'Electrician',
-        'Electrician'
+        icon: Icons.ac_unit,
+        label: l10n?.acRepair ?? 'AC Repair',
+        role: 'AC Repair',
+        price: 1200,
+        color: const Color(0xFF0EA5E9),
       ),
-      (Icons.cleaning_services, l10n?.cleaning ?? 'Cleaning', 'Cleaning'),
-      (Icons.school, l10n?.tutor ?? 'Tutor', 'Tutor'),
       (
-        Icons.face_retouching_natural,
-        l10n?.beautician ?? 'Beautician',
-        'Beautician'
+        icon: Icons.water_drop,
+        label: l10n?.plumber ?? 'Plumber',
+        role: 'Plumber',
+        price: 600,
+        color: const Color(0xFF06B6D4),
+      ),
+      (
+        icon: Icons.electrical_services,
+        label: l10n?.electrician ?? 'Electrician',
+        role: 'Electrician',
+        price: 800,
+        color: const Color(0xFFF59E0B),
+      ),
+      (
+        icon: Icons.cleaning_services,
+        label: l10n?.cleaning ?? 'Cleaning',
+        role: 'Cleaning',
+        price: 1000,
+        color: const Color(0xFF10B981),
+      ),
+      (
+        icon: Icons.school,
+        label: l10n?.tutor ?? 'Home Tutor',
+        role: 'Tutor',
+        price: 1500,
+        color: const Color(0xFF8B5CF6),
+      ),
+      (
+        icon: Icons.face_retouching_natural,
+        label: l10n?.beautician ?? 'Beautician',
+        role: 'Beautician',
+        price: 1500,
+        color: const Color(0xFFEC4899),
       ),
     ];
 
@@ -304,29 +397,124 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            l10n?.quickBook ?? 'Quick book',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n?.quickBook ?? 'Popular Services',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '1-Tap Match',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: services.map((service) {
-              return ActionChip(
-                avatar: Icon(service.$1, size: 18),
-                label: Text(service.$2),
-                onPressed: () {
-                  _problem.text = 'I need a ${service.$3} expert';
-                  final defaultRate = UstaadState.defaultBudgetForRole(service.$3);
-                  if (_budget.text.isEmpty) {
-                    setState(() => _budget.text = '$defaultRate');
-                  }
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth >= 380;
+              final crossAxisCount = isWide ? 3 : 2;
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: isWide ? 1.15 : 1.35,
+                ),
+                itemCount: services.length,
+                itemBuilder: (context, index) {
+                  final service = services[index];
+                  final isSelected = _serviceFilter == service.role;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      _problem.text = 'I need a professional ${service.role}';
+                      setState(() {
+                        _budget.text = '${service.price}';
+                        _serviceFilter = service.role;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                            : theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? theme.colorScheme.primary
+                              : theme.dividerColor.withValues(alpha: 0.5),
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: service.color.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              service.icon,
+                              size: 20,
+                              color: service.color,
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                service.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'from ${formatPkr(service.price)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 },
               );
-            }).toList(),
+            },
           ),
         ],
       ),
@@ -442,6 +630,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   }
 
   void _analyze() {
+    final state = context.read<UstaadState>();
+    if (state.isAnalyzing) return;
     final problem = _problem.text.trim();
     if (problem.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -449,12 +639,24 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       );
       return;
     }
-    final parsedBudget = int.tryParse(_budget.text.trim());
-    context.read<UstaadState>().startAnalysis(
-          problem,
-          _location.text,
-          initialOffer: parsedBudget,
+    final budgetStr = _budget.text.trim();
+    int? parsedBudget;
+    if (budgetStr.isNotEmpty) {
+      parsedBudget = int.tryParse(budgetStr);
+      if (parsedBudget == null || parsedBudget <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid numeric budget (e.g. 600).'),
+          ),
         );
+        return;
+      }
+    }
+    state.startAnalysis(
+      problem,
+      _location.text,
+      initialOffer: parsedBudget,
+    );
   }
 
   Future<void> _showLocationSearch() async {
@@ -825,28 +1027,40 @@ class SummaryMetric extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: scheme.primary),
-          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: scheme.primary),
+          ),
+          const SizedBox(height: 10),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w900,
                 ),
           ),
+          const SizedBox(height: 2),
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: scheme.onSurfaceVariant,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -865,55 +1079,160 @@ class ProviderListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<UstaadState>();
     final saved = state.isSavedProvider(provider.id);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.dividerColor.withValues(alpha: 0.6),
+        ),
       ),
       child: Row(
         children: [
-          Avatar(url: provider.avatarUrl, size: 46),
-          const SizedBox(width: 10),
+          Stack(
+            children: [
+              Avatar(url: provider.avatarUrl, size: 50),
+              if (provider.verified)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: scheme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.check,
+                      size: 10,
+                      color: scheme.onPrimary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  provider.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      provider.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            size: 12,
+                            color: Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${provider.rating}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFF59E0B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
-                  '${provider.role} - ${provider.city}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '${provider.rating} stars - ${provider.distanceKm} km - Rs. ${provider.price}',
+                  '${provider.role} • ${provider.city}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 13,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.navigation_outlined,
+                          size: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${provider.distanceKm} km',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      formatPkr(provider.price),
+                      style: TextStyle(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           IconButton(
             tooltip: saved ? 'Unsave provider' : 'Save provider',
             onPressed: () =>
                 context.read<UstaadState>().toggleSavedProvider(provider.id),
-            icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
+            icon: Icon(
+              saved ? Icons.bookmark : Icons.bookmark_border,
+              color: saved ? scheme.primary : null,
+            ),
           ),
-          IconButton.filledTonal(
-            tooltip: 'View match',
+          FilledButton.tonal(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
             onPressed: () =>
                 context.read<UstaadState>().previewProvider(provider),
-            icon: const Icon(Icons.arrow_forward),
+            child: const Text('Book',
+                style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),

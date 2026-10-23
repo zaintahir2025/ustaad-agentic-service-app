@@ -264,7 +264,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
             const SizedBox(height: 10),
           ],
           Container(
-            height: 480,
+            height: (MediaQuery.sizeOf(context).height - 240).clamp(380.0, 720.0),
             decoration: BoxDecoration(
               color: theme.cardColor,
               borderRadius: BorderRadius.circular(16),
