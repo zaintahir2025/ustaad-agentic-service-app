@@ -34,6 +34,7 @@ dependencies:
   go_router: ^18.1.0
   llamadart: ^0.13.2
   cloud_functions: ^6.5.1
+  connectivity_plus: ^7.3.1
 
 dev_dependencies:
   flutter_test:
