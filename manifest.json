@@ -1,0 +1,38 @@
+{
+    "name": "Ustaad - AI Home Services",
+    "short_name": "Ustaad",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#101010",
+    "theme_color": "#101010",
+    "description": "Book trusted, verified local technicians across Pakistan with InDrive-style transparent bidding.",
+    "orientation": "any",
+    "categories": ["lifestyle", "utilities", "business"],
+    "lang": "en",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
