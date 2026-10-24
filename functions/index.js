@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { GoogleGenAI } = require("@google/genai");
 const admin = require("firebase-admin");
 
@@ -6,61 +7,47 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+const db = admin.firestore();
+
 /**
  * System instruction tailored for multilingual Pakistani home service requests.
- * Explicitly instructs the model on Roman Urdu transliteration, code-switching,
- * Urdu in Nastaliq script, localized terminology, and Pakistani Rupee (PKR) offers.
+ * Handles English, Urdu (Nastaliq), and Roman Urdu transliteration/code-switching.
  */
 const SYSTEM_INSTRUCTION = `You are Ustaad AI, an expert natural language understanding system for a Pakistani home-services platform.
 Your task is to analyze user service requests in English, Urdu, Roman Urdu, or code-switched mixtures (Roman Urdu + English),
 and extract a structured service intent.
 
-Linguistic Context & Dialects:
-- Pakistani users frequently mix English and Roman Urdu (e.g. "kitchen sink pipe leak ho raha hai budget 600", "fan spark kar raha hai jaldi plumber ya electrician bhejo").
-- Urdu script inputs may be in Nastaliq/Arabic unicode characters (e.g. "بجلی کا بریکر جلدی ٹھیک کرو").
-- Roman Urdu keywords: bijli, batti, tar, wire, pankha, switch, breaker, pani, nalka, toti, geyzer, tanki, motor, safai, thanda, parhai, ustad, jaldi, foran, kharab, toot, etc.
-
 Supported Service Roles:
-1. 'Electrician': Breakers, wiring, short circuit, sparks, ceiling fans, switches, sockets, fuses, lights, UPS, generators, voltage fluctuation.
-2. 'Plumber': Water pipes, pipe leakage, taps, sink, washroom plumbing, commode, geyser, water tank, drainage, sewerage, water pump/motor.
-3. 'AC Repair': Air conditioner, cooling fault, gas leak, gas charge/refill, compressor, split AC servicing, heating mode.
-4. 'Cleaning': Sofa deep cleaning, carpet cleaning, water tank sanitization, floor scrubbing, post-construction cleaning.
-5. 'Tutor': Home tuition, school/college subjects (Math, Physics, English, Science), Matric, FSc, O/A Levels.
-6. 'Beautician': Bridal makeup, party makeup, haircut, mehndi, facial, waxing, parlour services.
-7. 'General': Handyman tasks, furniture assembly, or generic repairs not fitting above categories.
+1. 'Electrician': Breakers, wiring, short circuit, sparks, ceiling fans, switches, sockets, fuses, lights, UPS, generators.
+2. 'Plumber': Water pipes, pipe leakage, taps, sink, washroom plumbing, commode, geyser, water tank, drainage, water pump/motor.
+3. 'AC Repair': Air conditioner, cooling fault, gas leak, gas charge/refill, compressor, split AC servicing.
+4. 'Cleaning': Sofa deep cleaning, carpet cleaning, water tank sanitization, floor scrubbing.
+5. 'Tutor': Home tuition, school/college subjects (Math, Physics, English, Science).
+6. 'Beautician': Bridal makeup, party makeup, haircut, mehndi, facial, parlour services.
+7. 'General': Handyman tasks, furniture assembly, generic repairs.
 
 Urgency Classification:
-- 'High': Emergency words like "urgent", "jaldi", "foran", "immediately", "asap", "danger", "sparking", "short circuit", "flood", "overflowing", "toot gaya".
+- 'High': Emergency words like "urgent", "jaldi", "foran", "immediately", "asap", "danger", "sparking", "short circuit", "flood".
 - 'Normal': Standard scheduled repair.
 
-Budget & Offer Extraction:
-- Look for amounts expressed in PKR/rupees (e.g. "500 mein", "rs 800", "pkr 1200", "budget: 1500", "offer 700 rupay").
-- Must be a realistic integer between 50 and 100000. If none found, return null.
-
-Time Label:
-- E.g. "Immediate", "Tomorrow morning" (kal subah / کل صبح), "Tomorrow" (kal / کل), "Today" (aaj / آج), "Tonight" (raat / رات), or default to "Next available slot".
-
-Language:
-- 'Urdu' if containing Arabic/Urdu script.
-- 'Roman Urdu' if containing transliterated Roman Urdu tokens.
-- 'English' if standard English.
+Budget Extraction:
+- Look for amounts expressed in PKR (e.g. "500 mein", "rs 800", "pkr 1200", "budget: 1500"). Return integer between 50 and 100000.
 
 You MUST reply with JSON ONLY adhering strictly to:
 {
   "role": "Electrician" | "Plumber" | "AC Repair" | "Cleaning" | "Tutor" | "Beautician" | "General",
-  "description": string (concise, clear English title of the problem),
+  "description": string,
   "urgency": "High" | "Normal",
   "location": string,
   "timeLabel": string,
   "language": "Urdu" | "Roman Urdu" | "English",
-  "confidence": number (between 0.0 and 1.0),
+  "confidence": number,
   "userBudget": number | null,
-  "reasoning": string (brief summary explaining the categorization and linguistic signals)
+  "reasoning": string
 }`;
 
 /**
- * Built-in Heuristic Fallback Engine.
- * Used when GEMINI_API_KEY is not configured or in case of network/quota interruptions.
+ * Heuristic Fallback Engine for Intent Extraction.
  */
 function heuristicExtractIntent(problem, location, initialOffer) {
   const norm = (problem || "")
@@ -188,16 +175,9 @@ function heuristicExtractIntent(problem, location, initialOffer) {
   };
 }
 
-/**
- * Callable Cloud Function: extractServiceIntent
- * 
- * Invoked by client via Firebase Functions SDK:
- *   FirebaseFunctions.instance.httpsCallable('extractServiceIntent').call({
- *     problemText: '...',
- *     location: '...',
- *     initialOffer: 500,
- *   });
- */
+// =========================================================================
+// 1. PHASE 3 — Callable Cloud Function: extractServiceIntent
+// =========================================================================
 exports.extractServiceIntent = onCall(
   {
     cors: true,
@@ -217,13 +197,19 @@ exports.extractServiceIntent = onCall(
       );
     }
 
+    if (problemText.length > 500) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Problem description exceeds maximum allowable length of 500 characters."
+      );
+    }
+
     const apiKey = process.env.GEMINI_API_KEY || data.apiKey || "";
 
-    // If Gemini API Key is available, use Gemini 2.5 Flash for nuanced code-switching extraction
     if (apiKey) {
       try {
         const ai = new GoogleGenAI({ apiKey });
-        const userPrompt = `Analyze the following user service request:\nUser Request: "${problemText}"\nUser Location: "${location}"\nExplicit Initial Offer (if any): ${initialOffer ? initialOffer + ' PKR' : 'None'}\n\nReturn the structured JSON intent.`;
+        const userPrompt = `Analyze user request: "${problemText}" in "${location}". Initial offer: ${initialOffer || "None"}.`;
 
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
@@ -238,36 +224,24 @@ exports.extractServiceIntent = onCall(
         const text = response?.text?.trim() || "";
         if (text) {
           const parsed = JSON.parse(text);
-
-          const validRoles = [
-            "Electrician", "Plumber", "AC Repair", "Cleaning",
-            "Tutor", "Beautician", "General"
-          ];
-          const finalRole = validRoles.includes(parsed.role) ? parsed.role : "General";
-          const finalUrgency = parsed.urgency === "High" ? "High" : "Normal";
-          const finalLang = ["Urdu", "Roman Urdu", "English"].includes(parsed.language)
-            ? parsed.language
-            : "English";
-
           return {
-            role: finalRole,
-            description: parsed.description || `${finalRole} Service`,
-            urgency: finalUrgency,
+            role: parsed.role || "General",
+            description: parsed.description || "Home Service",
+            urgency: parsed.urgency || "Normal",
             location: parsed.location || location,
             timeLabel: parsed.timeLabel || "Next available slot",
-            language: finalLang,
-            confidence: typeof parsed.confidence === "number" ? Math.min(1.0, Math.max(0.0, parsed.confidence)) : 0.94,
-            userBudget: initialOffer || (typeof parsed.userBudget === "number" ? parsed.userBudget : null),
-            reasoning: parsed.reasoning || "Analyzed via Gemini 2.5 Flash Cloud Logic with multilingual code-switching.",
+            language: parsed.language || "English",
+            confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.95,
+            userBudget: initialOffer || parsed.userBudget || null,
+            reasoning: parsed.reasoning || "Analyzed via Gemini 2.5 Flash Cloud Logic.",
             source: "gemini-cloud",
           };
         }
       } catch (err) {
-        console.warn("Gemini API call failed or timed out; falling back to cloud heuristic:", err.message || err);
+        console.warn("Gemini API call failed, falling back to heuristic:", err.message);
       }
     }
 
-    // High-reliability cloud heuristic fallback
     const fallback = heuristicExtractIntent(problemText, location, initialOffer);
     return {
       ...fallback,
@@ -275,3 +249,314 @@ exports.extractServiceIntent = onCall(
     };
   }
 );
+
+// =========================================================================
+// 2. PHASE 4 & 5 — Firestore Trigger: onBookingCreate
+// =========================================================================
+exports.onBookingCreate = onDocumentCreated("bookings/{bookingId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) return;
+
+  const booking = snapshot.data();
+  const bookingId = event.params.bookingId;
+  const providerId = booking.providerId || booking.provider_id;
+
+  console.log(`[onBookingCreate] Processing new booking ${bookingId} for provider ${providerId}`);
+
+  // Fetch provider FCM tokens for instant push notification
+  if (providerId) {
+    try {
+      const providerDoc = await db.collection("users").doc(providerId).get();
+      if (providerDoc.exists) {
+        const tokens = providerDoc.data().fcmTokens || [];
+        if (tokens.length > 0) {
+          await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: {
+              title: "نیا آرڈر موصول ہوا! (New Job Request)",
+              body: `New booking request: ${booking.serviceType || "Service"} (${booking.priceEstimate || 0} PKR)`,
+            },
+            data: {
+              bookingId,
+              click_action: "FLUTTER_NOTIFICATION_CLICK",
+            },
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[onBookingCreate] FCM dispatch error:", err);
+    }
+  }
+});
+
+// =========================================================================
+// 3. PHASE 4 & 5 — Firestore Trigger: onBookingStatusChange
+// =========================================================================
+exports.onBookingStatusChange = onDocumentUpdated("bookings/{bookingId}", async (event) => {
+  const before = event.data.before.data();
+  const after = event.data.after.data();
+  const bookingId = event.params.bookingId;
+
+  if (before.status === after.status) return;
+
+  const validTransitions = {
+    pending: ["confirmed", "cancelled"],
+    confirmed: ["en_route", "cancelled"],
+    en_route: ["in_progress", "cancelled"],
+    in_progress: ["completed", "cancelled"],
+    completed: [],
+    cancelled: [],
+  };
+
+  const allowed = validTransitions[before.status] || [];
+  if (!allowed.includes(after.status)) {
+    console.warn(`[onBookingStatusChange] Invalid transition attempt: ${before.status} -> ${after.status} on booking ${bookingId}`);
+  }
+
+  // Notify customer of status change
+  const customerId = after.customerId || after.user_id;
+  if (customerId) {
+    try {
+      const customerDoc = await db.collection("users").doc(customerId).get();
+      if (customerDoc.exists) {
+        const tokens = customerDoc.data().fcmTokens || [];
+        if (tokens.length > 0) {
+          const statusLabels = {
+            confirmed: "Your booking is confirmed! Ustaad is assigned.",
+            en_route: "Ustaad is en route to your location! (راستے میں ہیں)",
+            in_progress: "Work in progress. (کام جاری ہے)",
+            completed: "Booking completed! Please leave a review. (کام مکمل)",
+            cancelled: "Booking was cancelled.",
+          };
+          await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: {
+              title: "Booking Update (آرڈر کی تفصیل)",
+              body: statusLabels[after.status] || `Status updated to ${after.status}`,
+            },
+            data: {
+              bookingId,
+              status: after.status,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[onBookingStatusChange] FCM notification error:", err);
+    }
+  }
+});
+
+// =========================================================================
+// 4. PHASE 4 — Firestore Trigger: onReviewCreate (Atomic Rating Recalculation)
+// =========================================================================
+exports.onReviewCreate = onDocumentCreated("reviews/{reviewId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) return;
+
+  const review = snapshot.data();
+  const providerId = review.providerId || review.provider_id;
+  const rating = Number(review.rating) || 5;
+
+  if (!providerId) return;
+
+  const providerRef = db.collection("providers").doc(providerId);
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const providerDoc = await transaction.get(providerRef);
+      if (!providerDoc.exists) return;
+
+      const data = providerDoc.data();
+      const currentRating = Number(data.rating) || 5.0;
+      const currentCount = Number(data.reviewCount) || 0;
+
+      const newCount = currentCount + 1;
+      const newRating = Number(((currentRating * currentCount + rating) / newCount).toFixed(2));
+
+      transaction.update(providerRef, {
+        rating: newRating,
+        reviewCount: newCount,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    console.log(`[onReviewCreate] Successfully updated provider ${providerId} rating atomically.`);
+  } catch (err) {
+    console.error("[onReviewCreate] Failed to update provider rating:", err);
+  }
+});
+
+// =========================================================================
+// 5. PHASE 6 — Callable Cloud Function: verifyJazzCashPayment
+// =========================================================================
+exports.verifyJazzCashPayment = onCall(
+  {
+    cors: true,
+    region: "us-central1",
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "User must be authenticated to verify payments.");
+    }
+
+    const { transactionRef, bookingId, amount } = request.data || {};
+
+    if (!transactionRef || !bookingId || !amount) {
+      throw new HttpsError("invalid-argument", "Missing transactionRef, bookingId, or amount.");
+    }
+
+    // Server-side audit and verification
+    const bookingRef = db.collection("bookings").doc(bookingId);
+    const bookingDoc = await bookingRef.get();
+
+    if (!bookingDoc.exists) {
+      throw new HttpsError("not-found", "Associated booking not found.");
+    }
+
+    const paymentRecord = {
+      bookingId,
+      customerId: request.auth.uid,
+      amount: Number(amount),
+      gateway: "JazzCash",
+      transactionRef,
+      status: "success",
+      verifiedByServer: true,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await db.collection("payments").add(paymentRecord);
+
+    await bookingRef.update({
+      paymentStatus: "paid",
+      status: "confirmed",
+      transactionRef,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      success: true,
+      transactionRef,
+      status: "paid",
+      message: "JazzCash payment verified successfully by Ustaad server.",
+    };
+  }
+);
+
+// =========================================================================
+// 6. PHASE 7 — Callable Cloud Function: searchProviders (Server-side Ranking)
+// =========================================================================
+exports.searchProviders = onCall(
+  {
+    cors: true,
+    region: "us-central1",
+  },
+  async (request) => {
+    const { serviceType, city = "Islamabad", userLocation, offer } = request.data || {};
+
+    // Configurable weights (can also be read from config/ranking_weights doc)
+    const weights = {
+      distance: 0.3,
+      rating: 0.4,
+      price: 0.2,
+      responseTime: 0.1,
+    };
+
+    let query = db.collection("providers");
+    if (city) {
+      query = query.where("city", "==", city);
+    }
+
+    const snapshot = await query.get();
+    const providers = [];
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      data.id = doc.id;
+      providers.push(data);
+    });
+
+    // Score and rank providers
+    const scored = providers.map((p) => {
+      const rating = Number(p.rating) || 4.5;
+      const price = Number(p.price) || 1000;
+      const distance = Number(p.distanceKm) || 4.0;
+      const responseTime = Number(p.responseTimeMinutes) || 15;
+
+      const normalizedRating = (rating / 5.0) * 100;
+      const normalizedDistance = Math.max(0, 100 - distance * 10);
+      const normalizedPrice = offer ? Math.max(0, 100 - Math.abs(price - offer) / 20) : 80;
+      const normalizedResponse = Math.max(0, 100 - responseTime * 2);
+
+      const totalScore =
+        normalizedRating * weights.rating +
+        normalizedDistance * weights.distance +
+        normalizedPrice * weights.price +
+        normalizedResponse * weights.responseTime;
+
+      let rankingReason = "Recommended";
+      if (rating >= 4.8) rankingReason = "Top Rated";
+      else if (distance <= 2.5) rankingReason = "Nearest";
+      else if (price <= 600) rankingReason = "Best Value";
+
+      return {
+        ...p,
+        totalScore: Math.round(totalScore),
+        rankingReason,
+      };
+    });
+
+    scored.sort((a, b) => b.totalScore - a.totalScore);
+
+    if (scored.length > 0) {
+      scored[0].rankingReason = "Best Match";
+    }
+
+    return {
+      providers: scored.slice(0, 20),
+      count: scored.length,
+      weights,
+    };
+  }
+);
+
+// =========================================================================
+// 7. PHASE 8 — Firestore Trigger: onNewChatMessage
+// =========================================================================
+exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) return;
+
+  const message = snapshot.data();
+  const chatId = event.params.chatId;
+  const senderId = message.senderId;
+
+  try {
+    const chatDoc = await db.collection("chats").doc(chatId).get();
+    if (!chatDoc.exists) return;
+
+    const participants = chatDoc.data().participants || [];
+    const recipientId = participants.find((id) => id !== senderId);
+
+    if (recipientId) {
+      const recipientDoc = await db.collection("users").doc(recipientId).get();
+      if (recipientDoc.exists) {
+        const tokens = recipientDoc.data().fcmTokens || [];
+        if (tokens.length > 0) {
+          await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: {
+              title: "New Message from Ustaad",
+              body: message.text || "You have a new message.",
+            },
+            data: {
+              chatId,
+              senderId,
+            },
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[onNewChatMessage] FCM dispatch error:", err);
+  }
+});

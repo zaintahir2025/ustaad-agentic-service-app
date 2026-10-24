@@ -21,10 +21,12 @@ export 'screens/gateway_screen.dart';
 export 'screens/profile_screen.dart';
 export 'screens/selection_screen.dart';
 export 'screens/workflow_screen.dart';
+export 'theme/ustaad_theme.dart';
 export 'widgets/auth_widgets.dart';
 export 'widgets/booking_card.dart';
 export 'widgets/common_widgets.dart';
 export 'widgets/osm_map_panel.dart';
+export 'widgets/primitives/primitives.dart';
 export 'widgets/provider_card.dart';
 
 /// Central router widget switching screens based on application state.

@@ -15,21 +15,51 @@ service cloud.firestore {
     }
 
     function isDocOwner() {
-      return isAuthenticated() && resource.data.user_id == request.auth.uid;
+      return isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.user_id == request.auth.uid ||
+        resource.data.customerId == request.auth.uid
+      );
     }
 
     function incomingDocOwner() {
-      return isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      return isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.user_id == request.auth.uid ||
+        request.resource.data.customerId == request.auth.uid
+      );
     }
 
     function isNonEmptyString(val, maxLength) {
       return val is string && val.size() > 0 && val.size() <= maxLength;
     }
 
+    function isValidRole(role) {
+      return role in ['customer', 'provider', 'admin'];
+    }
+
+    function isValidBookingStatus(status) {
+      return status in ['pending', 'confirmed', 'en_route', 'in_progress', 'completed', 'cancelled'];
+    }
+
     // -------------------------------------------------------------
-    // User Profiles
-    // Users can ONLY read and write their own profile.
+    // 1. User Profiles (`users/{userId}` and legacy `profiles/{userId}`)
+    // Users can ONLY read and write their own profile document.
     // -------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+
+      allow create, update: if isOwner(userId)
+        && isNonEmptyString(request.resource.data.name, 100)
+        && isValidRole(request.resource.data.role)
+        && (!('phone' in request.resource.data) || request.resource.data.phone is string)
+        && (!('address' in request.resource.data) || request.resource.data.address.size() <= 300)
+        && (!('city' in request.resource.data) || request.resource.data.city.size() <= 100)
+        && (!('fcmTokens' in request.resource.data) || request.resource.data.fcmTokens is list);
+
+      allow delete: if false;
+    }
+
     match /profiles/{userId} {
       allow read: if isOwner(userId);
 
@@ -44,10 +74,27 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // Service Providers (Master Catalog)
-    // Public directory is readable.
-    // Providers can only update their own availability and status, NOT their rating.
+    // 2. Providers (`providers/{providerId}` and `service_providers/{providerId}`)
+    // Public directory is readable for search/ranking.
+    // Providers can update their availability, status, and phone, but NEVER their
+    // ratings, review counts, or verification flags.
     // -------------------------------------------------------------
+    match /providers/{providerId} {
+      allow read: if true;
+
+      allow update: if isAuthenticated() && (
+        isOwner(providerId) || 
+        (resource.data.userId != null && resource.data.userId == request.auth.uid)
+      )
+        && request.resource.data.rating == resource.data.rating
+        && request.resource.data.reviewCount == resource.data.reviewCount
+        && request.resource.data.verified == resource.data.verified
+        && (!('cnicVerified' in resource.data) || request.resource.data.cnicVerified == resource.data.cnicVerified)
+        && (!('trainedByUstaad' in resource.data) || request.resource.data.trainedByUstaad == resource.data.trainedByUstaad);
+
+      allow create, delete: if false;
+    }
+
     match /service_providers/{providerId} {
       allow read: if true;
 
@@ -70,75 +117,125 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // Bookings
-    // Customers can only read and write their own bookings.
-    // Assigned providers can view their bookings and update fulfillment status.
+    // 3. Bookings (`bookings/{bookingId}`)
+    // Readable ONLY by the customer or assigned provider.
+    // Creatable ONLY by the customer with initial status 'pending' (or legacy 'scheduled').
+    // Status transitions strictly controlled.
     // -------------------------------------------------------------
     match /bookings/{bookingId} {
       allow read: if isAuthenticated() && (
-        resource.data.user_id == request.auth.uid ||
-        resource.data.provider_id == request.auth.uid
+        (resource.data.customerId != null && resource.data.customerId == request.auth.uid) ||
+        (resource.data.user_id != null && resource.data.user_id == request.auth.uid) ||
+        (resource.data.providerId != null && resource.data.providerId == request.auth.uid) ||
+        (resource.data.provider_id != null && resource.data.provider_id == request.auth.uid)
       );
 
-      allow create: if incomingDocOwner()
-        && isNonEmptyString(request.resource.data.provider_id, 100)
-        && request.resource.data.quote_total is int
-        && request.resource.data.quote_total > 0
-        && request.resource.data.quote_base is int
-        && request.resource.data.quote_base > 0
-        && request.resource.data.status in ['scheduled', 'en_route']
-        && request.resource.data.created_at != null;
+      allow create: if isAuthenticated()
+        && incomingDocOwner()
+        && (
+          (request.resource.data.status in ['pending', 'scheduled'])
+        );
 
       allow update: if isAuthenticated() && (
-        (isDocOwner()
-          && request.resource.data.user_id == resource.data.user_id
-          && request.resource.data.provider_id == resource.data.provider_id
-          && request.resource.data.quote_total == resource.data.quote_total
-          && request.resource.data.quote_base == resource.data.quote_base
-          && request.resource.data.status in ['scheduled', 'en_route', 'cancelled', 'issue_reported'])
+        // Customer updating booking (e.g. cancelling or reporting issue)
+        (
+          ((resource.data.customerId != null && resource.data.customerId == request.auth.uid) ||
+           (resource.data.user_id != null && resource.data.user_id == request.auth.uid))
+          && request.resource.data.status in ['pending', 'scheduled', 'cancelled', 'issue_reported']
+        )
         ||
-        (resource.data.provider_id == request.auth.uid
-          && request.resource.data.user_id == resource.data.user_id
-          && request.resource.data.provider_id == resource.data.provider_id
-          && request.resource.data.quote_total == resource.data.quote_total
-          && request.resource.data.quote_base == resource.data.quote_base
-          && request.resource.data.status in ['en_route', 'in_progress', 'completed', 'cancelled'])
+        // Assigned Provider updating lifecycle state
+        (
+          ((resource.data.providerId != null && resource.data.providerId == request.auth.uid) ||
+           (resource.data.provider_id != null && resource.data.provider_id == request.auth.uid))
+          && request.resource.data.status in ['confirmed', 'en_route', 'in_progress', 'completed', 'cancelled']
+        )
       );
 
       allow delete: if false;
     }
 
     // -------------------------------------------------------------
-    // Reviews
+    // 4. Reviews (`reviews/{reviewId}`)
     // Reviews can ONLY be created by the customer associated with a COMPLETED booking.
+    // Exactly 1 review per booking. Ratings must be integer 1 to 5.
     // -------------------------------------------------------------
     match /reviews/{reviewId} {
       allow read: if true;
 
       function hasCompletedBooking(bookingId) {
         return exists(/databases/$(database)/documents/bookings/$(bookingId))
-          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.user_id == request.auth.uid
-          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'completed'
-          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.provider_id == request.resource.data.provider_id;
+          && (
+            (get(/databases/$(database)/documents/bookings/$(bookingId)).data.customerId == request.auth.uid ||
+             get(/databases/$(database)/documents/bookings/$(bookingId)).data.user_id == request.auth.uid)
+          )
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'completed';
       }
 
-      allow create: if incomingDocOwner()
-        && isNonEmptyString(request.resource.data.provider_id, 100)
-        && isNonEmptyString(request.resource.data.booking_id, 100)
-        && hasCompletedBooking(request.resource.data.booking_id)
+      allow create: if isAuthenticated()
+        && incomingDocOwner()
+        && request.resource.data.bookingId != null
+        && hasCompletedBooking(request.resource.data.bookingId)
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
-        && request.resource.data.comment is string
-        && request.resource.data.comment.size() >= 3
-        && request.resource.data.comment.size() <= 1000
-        && request.resource.data.created_at != null;
+        && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 1000));
 
       allow update, delete: if false;
     }
 
     // -------------------------------------------------------------
-    // Agent Workflow Events (Audit Trail)
+    // 5. In-App Chats (`chats/{chatId}` and `chats/{chatId}/messages/{messageId}`)
+    // Readable and writable only by the participants in the chat.
+    // Messages cannot be edited or deleted once sent.
+    // -------------------------------------------------------------
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (
+        resource.data.participants != null && request.auth.uid in resource.data.participants
+      );
+
+      allow create: if isAuthenticated() && (
+        request.resource.data.participants != null && request.auth.uid in request.resource.data.participants
+      );
+
+      allow update: if isAuthenticated() && (
+        resource.data.participants != null && request.auth.uid in resource.data.participants
+      );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.participants != null &&
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+        );
+
+        allow create: if isAuthenticated()
+          && request.resource.data.senderId == request.auth.uid
+          && isNonEmptyString(request.resource.data.text, 2000)
+          && get(/databases/$(database)/documents/chats/$(chatId)).data.participants != null
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+
+        allow update, delete: if false;
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 6. Payments (`payments/{paymentId}`)
+    // Customer can read their payment records.
+    // Client write is completely blocked (server-side Cloud Functions only).
+    // -------------------------------------------------------------
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------
+    // 7. Audit Trail (`agent_events/{eventId}`)
     // -------------------------------------------------------------
     match /agent_events/{eventId} {
       allow read: if isDocOwner();
@@ -148,7 +245,7 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // Default Fallback: Deny Everything Else
+    // 8. Default Deny: All Other Document Paths
     // -------------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

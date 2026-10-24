@@ -15,6 +15,7 @@ import '../domain/usecases/rank_providers_use_case.dart';
 import '../domain/usecases/calculate_quote_use_case.dart';
 import '../domain/usecases/build_workflow_trace_use_case.dart';
 import '../domain/usecases/evaluate_achievements_use_case.dart';
+import '../data/models/user_role.dart';
 
 /// Clean Presentation State: Manages UI state, user sessions, and reactive mutations.
 ///
@@ -490,6 +491,44 @@ class UstaadState extends ChangeNotifier {
       bannerMessage = 'Could not sign in as guest: $e';
       authBusy = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> signInWithOtpMock({
+    required String phone,
+    required String code,
+    String? name,
+    UserRole role = UserRole.customer,
+  }) async {
+    authBusy = true;
+    notifyListeners();
+    try {
+      if (code == '000000' || code.length != 6) {
+        authBusy = false;
+        bannerMessage = 'Invalid verification code.';
+        notifyListeners();
+        return false;
+      }
+      user = UstaadUser(
+        id: 'phone-${phone.replaceAll(RegExp(r'[^0-9]'), '')}',
+        name: name ?? (role.isProvider ? 'Ustaad Provider' : 'Ustaad Customer'),
+        email: '$phone@ustaad.pk',
+        phone: phone,
+      );
+      sessionExpiresAt = DateTime.now().add(const Duration(days: 30));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ustaad_session_uid', user!.id);
+      await prefs.setString('ustaad_session_role', role.value);
+      await prefs.setString('ustaad_session_phone', phone);
+      bannerMessage = 'Welcome, ${user!.firstName}!';
+      authBusy = false;
+      setScreen(UstaadScreen.commandCenter);
+      return true;
+    } catch (e) {
+      authBusy = false;
+      bannerMessage = 'Phone authentication failed: $e';
+      notifyListeners();
+      return false;
     }
   }
 
